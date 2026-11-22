@@ -12,7 +12,13 @@ When it starts, it puts an icon in the system tray (the menu bar on macOS). Righ
 ├── Cargo.toml             # project settings and dependencies
 ├── build.rs               # embeds the icon into the Windows .exe
 ├── src/
-│   └── main.rs            # tray icon, menu and event loop
+│   ├── main.rs            # tray icon, menu and event loop
+│   └── spotlight/         # double-Ctrl mouse spotlight
+│       ├── mod.rs         # shows/hides/animates it (any OS)
+│       ├── detector.rs    # double-tap timing rules (any OS, unit-tested)
+│       ├── presenter.rs   # shrink/follow/auto-hide animation (any OS, unit-tested)
+│       ├── win32.rs       # Windows: keyboard/mouse hooks and the overlay window
+│       └── unsupported.rs # stand-in for macOS/Linux until they're implemented
 ├── assets/
 │   ├── icon.svg           # the icon source: edit this one
 │   └── icons/             # generated from icon.svg (don't edit by hand)
@@ -93,6 +99,16 @@ The release binary goes to:
 1. Start the app. An orange wrench icon shows up in the tray.
 2. **Right-click** the icon to open the menu.
 3. Click **Exit** to close the app.
+
+### Mouse spotlight (Windows)
+
+**Tap Left Ctrl twice** quickly, in any program, to find the mouse pointer. The screens dim, except for a circle around the pointer. The circle starts large and shrinks onto the pointer, then follows it.
+
+- It goes away when you press a key or click, or after the pointer has stayed still for 3 seconds.
+- Clicks and typing still reach the programs underneath.
+- Each tap must be under 0.3 s, with at most 0.4 s between taps. Holding Ctrl, or shortcuts like Ctrl+C, don't trigger it.
+
+The spotlight is Windows-only for now. On macOS and Linux the app runs without it.
 
 ## Icon
 

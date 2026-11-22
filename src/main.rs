@@ -2,12 +2,16 @@
 // Debug builds keep the console so `println!` output is visible while developing.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod spotlight;
+
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::WindowId;
+
+use spotlight::Spotlight;
 
 /// ID of the "Exit" menu item, used to recognise it when it's clicked.
 const EXIT_ID: &str = "exit";
@@ -15,6 +19,7 @@ const EXIT_ID: &str = "exit";
 /// Events we send into the event loop from other parts of the program.
 enum UserEvent {
     Menu(MenuEvent),
+    Spotlight(spotlight::Signal),
 }
 
 /// The app's state. winit calls the methods below when things happen.
@@ -22,6 +27,8 @@ enum UserEvent {
 struct App {
     /// Kept alive here so the icon stays in the tray. (On Linux it lives on the GTK thread instead.)
     tray: Option<TrayIcon>,
+    /// The double-Ctrl mouse spotlight (Windows only for now).
+    spotlight: Spotlight,
 }
 
 impl ApplicationHandler<UserEvent> for App {
@@ -39,12 +46,26 @@ impl ApplicationHandler<UserEvent> for App {
                 event_loop.exit();
             }
             UserEvent::Menu(_) => {}
+            UserEvent::Spotlight(signal) => self.spotlight.handle(event_loop, signal),
         }
     }
 
-    // winit requires these two, but this app has no windows, so they do nothing.
+    /// Called when there's nothing left to handle. While the spotlight shows, wake up again
+    /// shortly to animate it; otherwise sleep until the next event.
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        match self.spotlight.tick() {
+            Some(next) => event_loop.set_control_flow(ControlFlow::WaitUntil(next)),
+            None => event_loop.set_control_flow(ControlFlow::Wait),
+        }
+    }
+
+    /// The only window is the spotlight's overlay.
+    fn window_event(&mut self, _event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        self.spotlight.window_event(id, &event);
+    }
+
+    // winit requires this one, but there's nothing to do here.
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
-    fn window_event(&mut self, _event_loop: &ActiveEventLoop, _id: WindowId, _event: WindowEvent) {}
 }
 
 fn main() {
@@ -64,6 +85,12 @@ fn main() {
     MenuEvent::set_event_handler(Some(move |event| {
         let _ = proxy.send_event(UserEvent::Menu(event));
     }));
+
+    // Listen for the double Ctrl tap in every program, and forward it the same way.
+    let proxy = event_loop.create_proxy();
+    spotlight::start_listener(move |signal| {
+        let _ = proxy.send_event(UserEvent::Spotlight(signal));
+    });
 
     // On Linux the tray icon is drawn by GTK, which needs its own thread and loop.
     #[cfg(target_os = "linux")]

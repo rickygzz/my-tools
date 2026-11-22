@@ -69,10 +69,10 @@ fn main() {
     #[cfg(target_os = "linux")]
     std::thread::spawn(|| {
         gtk::init().expect("failed to initialise GTK");
-        if !linux_tray_host_available() {
+        if !linux_tray::ensure_host() {
             // Without a tray host the icon (and its Exit menu) would be invisible,
             // leaving a process the user can't see or close. Explain, then quit.
-            show_missing_tray_host_dialog();
+            linux_tray::show_missing_host_dialog();
             std::process::exit(1);
         }
         let _tray = build_tray(); // stays alive while gtk::main() runs
@@ -99,55 +99,159 @@ fn build_tray() -> TrayIcon {
         .expect("failed to create tray icon")
 }
 
-/// Checks whether the desktop can show tray icons. Linux tray icons register with the
-/// `org.kde.StatusNotifierWatcher` D-Bus service; KDE, Cinnamon, XFCE etc. provide it,
-/// but stock GNOME only does when the AppIndicator extension is enabled.
-/// If D-Bus can't be queried we assume a host exists rather than block startup.
+/// Making sure Linux desktops can show the tray icon.
+///
+/// Linux tray icons register with the `org.kde.StatusNotifierWatcher` D-Bus service.
+/// KDE, Cinnamon, XFCE, Ubuntu's GNOME etc. provide it; stock GNOME only does when the
+/// "AppIndicator and KStatusNotifierItem Support" extension is enabled.
 #[cfg(target_os = "linux")]
-fn linux_tray_host_available() -> bool {
-    use gtk::gio::{self, BusType, Cancellable, DBusCallFlags};
-    use gtk::glib::{ToVariant, VariantTy};
-
-    let Ok(bus) = gio::bus_get_sync(BusType::Session, None::<&Cancellable>) else {
-        return true;
-    };
-    bus.call_sync(
-        Some("org.freedesktop.DBus"),
-        "/org/freedesktop/DBus",
-        "org.freedesktop.DBus",
-        "NameHasOwner",
-        Some(&("org.kde.StatusNotifierWatcher",).to_variant()),
-        Some(VariantTy::new("(b)").unwrap()),
-        DBusCallFlags::NONE,
-        -1,
-        None::<&Cancellable>,
-    )
-    .ok()
-    .and_then(|reply| reply.get::<(bool,)>())
-    .is_none_or(|(has_owner,)| has_owner)
-}
-
-/// Tells the user why no tray icon will appear and how to fix it.
-#[cfg(target_os = "linux")]
-fn show_missing_tray_host_dialog() {
+mod linux_tray {
+    use gtk::gio::{self, BusType, Cancellable, DBusCallFlags, DBusConnection};
+    use gtk::glib::{ToVariant, Variant, VariantTy};
     use gtk::prelude::*;
+    use std::time::{Duration, Instant};
 
-    let dialog = gtk::MessageDialog::new(
-        None::<&gtk::Window>,
-        gtk::DialogFlags::MODAL,
-        gtk::MessageType::Warning,
-        gtk::ButtonsType::Ok,
-        "My Tools can't show its tray icon",
-    );
-    dialog.set_title("My Tools");
-    dialog.set_secondary_text(Some(
-        "Your desktop has no system tray. On GNOME, install the AppIndicator extension:\n\n\
-         sudo dnf install gnome-shell-extension-appindicator\n\n\
-         Log out and back in, then run:\n\n\
-         gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com",
-    ));
-    dialog.run();
-    dialog.close();
+    const WATCHER: &str = "org.kde.StatusNotifierWatcher";
+    const SHELL_EXTENSIONS: &str = "org.gnome.Shell.Extensions";
+    const EXTENSION_UUID: &str = "appindicatorsupport@rgcjonas.gmail.com";
+    /// How long to wait for the tray service after enabling/installing the extension.
+    const WATCHER_WAIT: Duration = Duration::from_secs(10);
+    /// D-Bus timeout meaning "wait forever" (G_MAXINT), for calls that wait on the user.
+    const NO_TIMEOUT: i32 = i32::MAX;
+
+    /// Returns true if a tray host is available, setting one up on GNOME if needed:
+    /// enables the AppIndicator extension if it's installed but off, otherwise asks
+    /// GNOME to install it from extensions.gnome.org (GNOME shows its own confirmation).
+    /// If D-Bus can't be queried at all, assumes a host exists rather than block startup.
+    pub fn ensure_host() -> bool {
+        let Ok(bus) = gio::bus_get_sync(BusType::Session, None::<&Cancellable>) else {
+            return true;
+        };
+        if has_owner(&bus, WATCHER).unwrap_or(true) {
+            return true;
+        }
+        // Not GNOME Shell (or a version without the extensions API): nothing we can fix.
+        if !has_owner(&bus, SHELL_EXTENSIONS).unwrap_or(false) {
+            return false;
+        }
+        enable_or_install_extension(&bus) && wait_for_watcher(&bus)
+    }
+
+    /// Enables the extension if installed, otherwise requests installation.
+    /// Returns true if the extension should now be running.
+    fn enable_or_install_extension(bus: &DBusConnection) -> bool {
+        let Some(info) = shell_call(bus, "GetExtensionInfo", "(a{sv})", -1) else {
+            return false;
+        };
+        let info = gtk::glib::VariantDict::new(Some(&info.child_value(0)));
+        let installed = info.contains("uuid");
+
+        if !installed {
+            // Blocks until the user answers GNOME's "Install extension?" prompt.
+            // GNOME downloads, enables and loads it right away; no logout needed.
+            return shell_call(bus, "InstallRemoteExtension", "(s)", NO_TIMEOUT)
+                .and_then(|reply| reply.get::<(String,)>())
+                .is_some_and(|(result,)| result == "successful");
+        }
+
+        let enabled = info.lookup::<bool>("enabled").ok().flatten().unwrap_or(false);
+        if enabled {
+            // Installed and enabled, yet no tray service: it's failing to load
+            // (e.g. not compatible with this GNOME version). Nothing more we can do.
+            return false;
+        }
+        shell_call(bus, "EnableExtension", "(b)", -1)
+            .and_then(|reply| reply.get::<(bool,)>())
+            .is_some_and(|(ok,)| ok)
+    }
+
+    /// Polls until the tray service appears, up to `WATCHER_WAIT`.
+    fn wait_for_watcher(bus: &DBusConnection) -> bool {
+        let deadline = Instant::now() + WATCHER_WAIT;
+        while Instant::now() < deadline {
+            if has_owner(bus, WATCHER).unwrap_or(false) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        false
+    }
+
+    /// Asks the D-Bus daemon whether some process owns `name`.
+    fn has_owner(bus: &DBusConnection, name: &str) -> Option<bool> {
+        call(
+            bus,
+            "org.freedesktop.DBus",
+            "/org/freedesktop/DBus",
+            "org.freedesktop.DBus",
+            "NameHasOwner",
+            (name,).to_variant(),
+            "(b)",
+            -1,
+        )?
+        .get::<(bool,)>()
+        .map(|(owned,)| owned)
+    }
+
+    /// Calls a GNOME Shell extensions method that takes the extension's UUID.
+    fn shell_call(bus: &DBusConnection, method: &str, reply: &str, timeout_ms: i32) -> Option<Variant> {
+        call(
+            bus,
+            SHELL_EXTENSIONS,
+            "/org/gnome/Shell/Extensions",
+            SHELL_EXTENSIONS,
+            method,
+            (EXTENSION_UUID,).to_variant(),
+            reply,
+            timeout_ms,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn call(
+        bus: &DBusConnection,
+        dest: &str,
+        path: &str,
+        interface: &str,
+        method: &str,
+        args: Variant,
+        reply: &str,
+        timeout_ms: i32,
+    ) -> Option<Variant> {
+        bus.call_sync(
+            Some(dest),
+            path,
+            interface,
+            method,
+            Some(&args),
+            Some(VariantTy::new(reply).ok()?),
+            DBusCallFlags::NONE,
+            timeout_ms,
+            None::<&Cancellable>,
+        )
+        .ok()
+    }
+
+    /// Tells the user why no tray icon will appear and how to fix it by hand.
+    pub fn show_missing_host_dialog() {
+        let dialog = gtk::MessageDialog::new(
+            None::<&gtk::Window>,
+            gtk::DialogFlags::MODAL,
+            gtk::MessageType::Warning,
+            gtk::ButtonsType::Ok,
+            "My Tools can't show its tray icon",
+        );
+        dialog.set_title("My Tools");
+        dialog.set_secondary_text(Some(
+            "Your desktop has no system tray.\n\n\
+             On GNOME, install and enable the \"AppIndicator and KStatusNotifierItem \
+             Support\" extension, from your distribution's packages or from \
+             extensions.gnome.org/extension/615/appindicator-support/\n\n\
+             Then start My Tools again.",
+        ));
+        dialog.run();
+        dialog.close();
+    }
 }
 
 /// Raw 32x32 RGBA pixels of the app icon, generated from `assets/icon.svg` by `icon-gen`

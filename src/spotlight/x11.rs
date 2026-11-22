@@ -8,9 +8,7 @@
 //!   pixels around the circle. XFixes gives it an empty input area, so clicks go through.
 //!   Per-pixel transparency needs a *compositor* (built into GNOME, KDE, Cinnamon, XFCE...).
 //!
-//! **Wayland** sessions get nothing: Wayland doesn't let an app see other apps' keys or where
-//! the pointer is, by design. GNOME (Settings → Accessibility → Locate Pointer) and KDE
-//! (the Track Mouse effect) have a built-in equivalent instead.
+//! Wayland sessions use `wayland/` instead (`linux.rs` picks).
 
 use std::error::Error;
 use std::sync::OnceLock;
@@ -32,16 +30,6 @@ use winit::window::WindowId;
 use super::shape::{Area, Circle, Colors};
 use super::{Point, Signal};
 
-const WAYLAND_NOTE: &str = "spotlight: not available on Wayland, which doesn't let apps see \
-     other apps' keys or the pointer. Use your desktop's own: GNOME Settings → Accessibility → \
-     Locate Pointer, or KDE's Track Mouse effect.";
-
-/// Whether this is a Wayland session (even if X11 apps can still run in it).
-fn is_wayland() -> bool {
-    std::env::var_os("WAYLAND_DISPLAY").is_some()
-        || std::env::var("XDG_SESSION_TYPE").is_ok_and(|session| session == "wayland")
-}
-
 // ---------------------------------------------------------------------------------------------
 // Listener
 // ---------------------------------------------------------------------------------------------
@@ -56,10 +44,6 @@ const SCROLL_BUTTONS: std::ops::RangeInclusive<u32> = 4..=7;
 /// Starts listening to every key and click, calling `notify` when the spotlight should show
 /// (Left Ctrl tapped twice) or hide (any key or click while it shows).
 pub fn start_listener(notify: impl Fn(Signal) + Send + 'static) {
-    if is_wayland() {
-        eprintln!("{WAYLAND_NOTE}");
-        return;
-    }
     super::set_listener(notify);
 
     let spawned = std::thread::Builder::new()
@@ -172,9 +156,6 @@ pub struct Overlay {
 
 impl Overlay {
     pub fn new(_event_loop: &ActiveEventLoop) -> Result<Self, Box<dyn Error>> {
-        if is_wayland() {
-            return Err(WAYLAND_NOTE.into());
-        }
         let display = display().ok_or("could not connect to the X server")?;
         let conn = &display.conn;
         let screen = &conn.setup().roots[display.screen];
@@ -236,9 +217,9 @@ impl Overlay {
         false
     }
 
-    pub fn window_event(&mut self, _event: &WindowEvent) {}
+    pub fn window_event(&mut self, _id: WindowId, _event: &WindowEvent) {}
 
-    pub fn show(&mut self) {
+    pub fn show(&mut self, _event_loop: &ActiveEventLoop) {
         if let Err(error) = self.try_show() {
             eprintln!("spotlight: could not show: {error}");
         }

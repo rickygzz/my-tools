@@ -13,6 +13,12 @@ use winit::window::WindowId;
 use spotlight::Spotlight;
 use tray::Tray;
 
+/// The app's reverse-DNS ID. Linux desktops use it to find the app's `.desktop` file, which
+/// they need to remember its keyboard shortcut and to label its notifications. Keep it in line
+/// with `packaging/linux/<APP_ID>.desktop` and `CFBundleIdentifier` in packaging/macos/Info.plist.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+const APP_ID: &str = "com.example.my-tools";
+
 /// Events we send into the event loop from other parts of the program.
 enum UserEvent {
     /// "Exit" was clicked in the tray menu.
@@ -75,6 +81,12 @@ impl ApplicationHandler<UserEvent> for App {
 
     // winit requires this one, but there's nothing to do here.
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
+
+    /// Close the spotlight's windows while the event loop still exists: on Wayland its pixel
+    /// buffers live on the event loop's connection to the compositor.
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        self.spotlight = Spotlight::default();
+    }
 }
 
 fn main() {

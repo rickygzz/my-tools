@@ -121,7 +121,7 @@ fn linux(root: &Path, dist: &Path, version: &str) -> Result<PathBuf> {
     fs::create_dir_all(&icons)?;
 
     copy(&root.join("target/release").join(BIN), &stage)?;
-    copy(&root.join("packaging/linux/my-tools.desktop"), &stage)?;
+    copy(&root.join("packaging/linux/com.example.my-tools.desktop"), &stage)?;
     copy(&root.join("packaging/linux/install.sh"), &stage)?;
     make_executable(&stage.join(BIN))?;
     make_executable(&stage.join("install.sh"))?;

@@ -13,21 +13,27 @@
 //! | Windows       | `win32.rs`       | low-level hooks    | layered window + softbuffer |
 //! | macOS         | `macos.rs`       | CGEventTap         | NSWindow + CAShapeLayer     |
 //! | Linux (X11)   | `x11.rs`         | XInput2 raw events | ARGB X window               |
+//! | Linux (Wayland) | `wayland/`     | shortcut portal    | maximized window, ARGB shm  |
 //! | anything else | `unsupported.rs` | -                  | -                           |
 //!
-//! Wayland doesn't let apps see other apps' keys or the pointer, so on a Wayland session
-//! `x11.rs` stands down (see there).
+//! `linux.rs` picks X11 or Wayland when the app starts. Wayland doesn't let apps see other
+//! apps' keys or the pointer, so there a keyboard shortcut replaces the double tap (see
+//! `wayland/`).
 
 mod detector;
 mod presenter;
 mod shape;
 
+#[cfg(target_os = "linux")]
+mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod unsupported;
 #[cfg(windows)]
 mod win32;
+#[cfg(target_os = "linux")]
+mod wayland;
 #[cfg(target_os = "linux")]
 mod x11;
 
@@ -38,7 +44,7 @@ use unsupported as platform;
 #[cfg(windows)]
 use win32 as platform;
 #[cfg(target_os = "linux")]
-use x11 as platform;
+use linux as platform;
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -128,6 +134,12 @@ fn click() {
     });
 }
 
+/// The spotlight's keyboard shortcut was pressed (Wayland, where it replaces the double tap).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn shortcut_pressed() {
+    with_listener(|listener| (listener.notify)(Signal::Show));
+}
+
 /// How often the spotlight moves and resizes while it shows (~60 times a second).
 const TICK: Duration = Duration::from_millis(15);
 
@@ -175,7 +187,7 @@ impl Spotlight {
         let cursor = platform::cursor_position();
         let presenter = Presenter::new(now, cursor);
 
-        overlay.show();
+        overlay.show(event_loop);
         overlay.draw(cursor, presenter.radius(now));
         self.presenter = Some(presenter);
         self.next_tick = now + TICK;
@@ -220,7 +232,7 @@ impl Spotlight {
         if let Some(overlay) = self.overlay.as_mut()
             && overlay.owns(id)
         {
-            overlay.window_event(event);
+            overlay.window_event(id, event);
         }
     }
 }

@@ -17,14 +17,16 @@ When it starts, it puts an icon in the system tray (the menu bar on macOS). Righ
 │   │   ├── mod.rs         # shared tooltip, label and icon pixels
 │   │   ├── windows_macos.rs # Windows, macOS: tray-icon crate
 │   │   └── linux.rs       # Linux: ksni over D-Bus, GNOME extension setup
-│   └── spotlight/         # double-Ctrl mouse spotlight
+│   └── spotlight/         # mouse spotlight (double Ctrl; a shortcut on Wayland)
 │       ├── mod.rs         # shows/hides/animates it, interprets keys (any OS)
 │       ├── detector.rs    # double-tap timing rules (any OS, unit-tested)
 │       ├── presenter.rs   # shrink/follow/auto-hide animation (any OS, unit-tested)
 │       ├── shape.rs       # draws the circle pixel by pixel (Windows, X11; unit-tested)
 │       ├── win32.rs       # Windows: keyboard/mouse hooks, layered overlay window
 │       ├── macos.rs       # macOS: CGEventTap, NSWindow + Core Animation overlay
+│       ├── linux.rs       # Linux: picks X11 or Wayland
 │       ├── x11.rs         # Linux X11: XInput2 raw events, ARGB overlay window
+│       ├── wayland/       # Linux Wayland: shortcut portal, maximized ARGB window
 │       └── unsupported.rs # stand-in for any other OS
 ├── assets/
 │   ├── icon.svg           # the icon source: edit this one
@@ -108,7 +110,7 @@ The release binary goes to:
 | Windows | Works. Nothing to set up. |
 | macOS | Uses Left **Control**. The first time, macOS asks you to allow My Tools under **System Settings → Privacy & Security → Input Monitoring**. The spotlight starts working a few seconds after you allow it. |
 | Linux, X11 | Works. The dimming needs a compositor; GNOME, KDE, Cinnamon, XFCE and most other desktops have one. |
-| Linux, Wayland | Not available. Wayland doesn't let apps see other apps' keys or where the pointer is. Use your desktop's built-in feature instead: GNOME has **Settings → Accessibility → Locate Pointer** (press Ctrl), and KDE has the **Track Mouse** desktop effect. |
+| Linux, Wayland | Wayland doesn't let apps see other apps' keys, so instead of a double Ctrl tap you press a keyboard shortcut, **Ctrl+Alt+P** by default. The first time, the desktop asks you to confirm or change it; change it later in **Settings → Keyboard → Keyboard Shortcuts** (GNOME). Only the monitor with the pointer is dimmed, and not GNOME's top bar: GNOME paints full-screen windows over solid black, so the spotlight uses a maximized window. While it shows, a click hides it instead of reaching the window underneath. Needs GNOME 48+ or KDE Plasma 5.27+. |
 
 ## Icon
 
@@ -188,7 +190,9 @@ This needs the repository on GitHub, with a remote set up (`git remote add origi
 
   This also adds the app, with its icon, to your desktop's app menu.
 
-Before publishing for macOS, change `CFBundleIdentifier` in [`packaging/macos/Info.plist`](packaging/macos/Info.plist) to your own name, such as `io.github.yourname.my-tools`.
+Before publishing, replace the placeholder app ID `com.example.my-tools` with your own reverse-domain name, such as `io.github.yourname.my-tools`, everywhere it appears: `APP_ID` in [`src/main.rs`](src/main.rs), `CFBundleIdentifier` in [`packaging/macos/Info.plist`](packaging/macos/Info.plist), the name of [`packaging/linux/com.example.my-tools.desktop`](packaging/linux/com.example.my-tools.desktop), and the references to that file in `install.sh` and `xtask/src/dist.rs`. macOS uses it to tell apps apart; Linux desktops use it to remember the spotlight shortcut.
+
+When you run the app from a build folder on Linux (`cargo run`) without having installed it, it adds a hidden `~/.local/share/applications/com.example.my-tools.desktop` pointing at that build, because the desktop needs one before it accepts the shortcut. `install.sh` replaces it.
 
 ### Platform notes
 

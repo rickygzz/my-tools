@@ -209,9 +209,9 @@ impl Overlay {
         false
     }
 
-    pub fn window_event(&mut self, _event: &WindowEvent) {}
+    pub fn window_event(&mut self, _id: WindowId, _event: &WindowEvent) {}
 
-    pub fn show(&mut self) {
+    pub fn show(&mut self, _event_loop: &ActiveEventLoop) {
         // Displays may have been added, removed or moved since last time.
         let frames: Vec<CGRect> = NSScreen::screens(self.mtm).iter().map(|s| s.frame()).collect();
         let current: Vec<CGRect> = self.screens.iter().map(|s| s.frame).collect();

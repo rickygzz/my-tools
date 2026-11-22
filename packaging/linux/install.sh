@@ -10,10 +10,13 @@ cd "$(dirname "$0")"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}"
 BIN_DIR="$HOME/.local/bin"
 SIZES="16 24 32 48 64 128 256 512 1024"
+# Must match APP_ID in src/main.rs: the desktop finds the app's shortcuts and notifications by it.
+DESKTOP_FILE="com.example.my-tools.desktop"
 
 if [ "${1:-}" = "--uninstall" ]; then
     rm -f "$BIN_DIR/my-tools"
-    rm -f "$DATA_DIR/applications/my-tools.desktop"
+    rm -f "$DATA_DIR/applications/$DESKTOP_FILE"
+    rm -f "$DATA_DIR/applications/my-tools.desktop" # name used by older versions
     rm -f "$DATA_DIR/icons/hicolor/scalable/apps/my-tools.svg"
     for s in $SIZES; do
         rm -f "$DATA_DIR/icons/hicolor/${s}x${s}/apps/my-tools.png"
@@ -23,7 +26,8 @@ if [ "${1:-}" = "--uninstall" ]; then
 fi
 
 install -Dm755 my-tools "$BIN_DIR/my-tools"
-install -Dm644 my-tools.desktop "$DATA_DIR/applications/my-tools.desktop"
+install -Dm644 "$DESKTOP_FILE" "$DATA_DIR/applications/$DESKTOP_FILE"
+rm -f "$DATA_DIR/applications/my-tools.desktop" # name used by older versions
 install -Dm644 icons/icon.svg "$DATA_DIR/icons/hicolor/scalable/apps/my-tools.svg"
 for s in $SIZES; do
     install -Dm644 "icons/icon-$s.png" "$DATA_DIR/icons/hicolor/${s}x${s}/apps/my-tools.png"

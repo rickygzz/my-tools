@@ -204,7 +204,7 @@ fn notify_no_tray(bus: &Connection) {
 
     let mut hints: HashMap<&str, Value> = HashMap::new();
     hints.insert("urgency", Value::U8(2)); // critical: stays on screen until dismissed
-    hints.insert("desktop-entry", Value::from(env!("CARGO_PKG_NAME")));
+    hints.insert("desktop-entry", Value::from(crate::APP_ID));
     let _ = bus.call_method(
         Some("org.freedesktop.Notifications"),
         "/org/freedesktop/Notifications",

@@ -219,7 +219,7 @@ impl Overlay {
     }
 
     /// Shows the window over every monitor, without taking the focus.
-    pub fn show(&mut self) {
+    pub fn show(&mut self, _event_loop: &ActiveEventLoop) {
         // Monitors may have been added, removed or moved since last time.
         let bounds = virtual_screen();
         if bounds != self.bounds {
@@ -345,7 +345,7 @@ impl Overlay {
         true
     }
 
-    pub fn window_event(&mut self, event: &WindowEvent) {
+    pub fn window_event(&mut self, _id: WindowId, event: &WindowEvent) {
         match event {
             // Windows wants the window painted again (e.g. after a display change).
             WindowEvent::RedrawRequested => {

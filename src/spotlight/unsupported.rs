@@ -26,7 +26,7 @@ impl Overlay {
     pub fn owns(&self, _id: WindowId) -> bool {
         match *self {}
     }
-    pub fn show(&mut self) {
+    pub fn show(&mut self, _event_loop: &ActiveEventLoop) {
         match *self {}
     }
     pub fn hide(&mut self) {
@@ -35,7 +35,7 @@ impl Overlay {
     pub fn draw(&mut self, _center: Point, _radius: i32) {
         match *self {}
     }
-    pub fn window_event(&mut self, _event: &WindowEvent) {
+    pub fn window_event(&mut self, _id: WindowId, _event: &WindowEvent) {
         match *self {}
     }
 }

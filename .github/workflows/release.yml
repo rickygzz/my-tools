@@ -24,12 +24,6 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Linux libraries (GTK, AppIndicator, xdo)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libxdo-dev libayatana-appindicator3-dev
-
       - name: Build package
         run: cargo xtask dist
 

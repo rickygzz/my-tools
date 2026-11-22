@@ -12,7 +12,11 @@ When it starts, it puts an icon in the system tray (the menu bar on macOS). Righ
 ├── Cargo.toml             # project settings and dependencies
 ├── build.rs               # embeds the icon into the Windows .exe
 ├── src/
-│   ├── main.rs            # tray icon, menu and event loop
+│   ├── main.rs            # event loop: starts the tray and spotlight, handles Exit
+│   ├── tray/              # tray icon and its Exit menu
+│   │   ├── mod.rs         # shared tooltip, label and icon pixels
+│   │   ├── windows_macos.rs # Windows, macOS: tray-icon crate
+│   │   └── linux.rs       # Linux: ksni over D-Bus, GNOME extension setup
 │   └── spotlight/         # double-Ctrl mouse spotlight
 │       ├── mod.rs         # shows/hides/animates it, interprets keys (any OS)
 │       ├── detector.rs    # double-tap timing rules (any OS, unit-tested)
@@ -36,9 +40,10 @@ When it starts, it puts an icon in the system tray (the menu bar on macOS). Righ
 
 Built with:
 
-- [`tray-icon`](https://crates.io/crates/tray-icon): tray icon and context menu
 - [`winit`](https://crates.io/crates/winit): cross-platform event loop
-- [`gtk`](https://crates.io/crates/gtk) (Linux only): runs the tray icon on its own GTK thread
+- [`tray-icon`](https://crates.io/crates/tray-icon) (Windows, macOS): tray icon and context menu
+- [`ksni`](https://crates.io/crates/ksni) (Linux): tray icon and context menu over D-Bus (StatusNotifierItem), no GTK needed
+- [`zbus`](https://crates.io/crates/zbus) (Linux): D-Bus calls for GNOME extension setup and notifications
 
 ## Prerequisites
 
@@ -58,29 +63,14 @@ Install Rust with [rustup](https://rustup.rs) on every platform. Then install th
 
 ### Linux
 
-The tray uses GTK and AppIndicator, so install their development packages.
+Nothing extra beyond a C toolchain (`build-essential`, `gcc` or `base-devel`). The tray talks to the desktop over D-Bus in pure Rust, so no GTK or AppIndicator packages are needed.
 
-**Debian / Ubuntu**
-
-```sh
-sudo apt install build-essential libgtk-3-dev libxdo-dev libayatana-appindicator3-dev
-```
-
-**Fedora**
-
-```sh
-sudo dnf install gcc gtk3-devel libxdo-devel libayatana-appindicator-gtk3-devel
-```
-
-**Arch**
-
-```sh
-sudo pacman -S base-devel gtk3 xdotool libayatana-appindicator
-```
-
-> **GNOME users:** GNOME doesn't show tray icons by default. Install and enable the
+> **GNOME users:** GNOME doesn't show tray icons by default; it needs the
 > [AppIndicator and KStatusNotifierItem Support](https://extensions.gnome.org/extension/615/appindicator-support/)
-> extension. KDE, XFCE, Cinnamon and most other desktops work without it.
+> extension. If it's missing, the app turns it on (if installed) or asks GNOME to install it
+> (GNOME shows a confirmation; no logout needed). If that doesn't work, it shows a
+> notification explaining how to install it by hand, then quits. KDE, XFCE, Cinnamon and most
+> other desktops work without it.
 
 ## Build and run
 
@@ -204,4 +194,4 @@ Before publishing for macOS, change `CFBundleIdentifier` in [`packaging/macos/In
 
 - **Windows:** Debug builds open a console window, so `println!` output is visible while you develop. Release builds don't open one.
 - **macOS:** The app runs as a menu-bar-only app, with no Dock icon.
-- **Linux:** On most desktops, AppIndicator opens the menu on left-click *and* right-click.
+- **Linux:** The menu opens on right-click; left-click does nothing, as on the other platforms.

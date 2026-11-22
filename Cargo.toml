@@ -4,11 +4,18 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tray-icon = "0.26.1"
 winit = "0.30"
 
+# Windows and macOS tray. On Linux it needs GTK and the deprecated libayatana-appindicator,
+# so Linux uses ksni instead (below).
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+tray-icon = "0.26.1"
+
 [target.'cfg(target_os = "linux")'.dependencies]
-gtk = "0.18"
+# Linux tray: speaks the StatusNotifierItem D-Bus protocol directly, no GTK or C libraries.
+ksni = { version = "0.3.7", default-features = false, features = ["blocking", "async-io"] }
+# D-Bus calls of our own (GNOME extension setup, notifications). Same version ksni uses.
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 # Linux (X11) spotlight: keys via XInput2, click-through via XFixes. winit already uses x11rb.
 x11rb = { version = "0.13", features = ["xinput", "xfixes", "shape"] }
 

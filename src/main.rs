@@ -69,6 +69,12 @@ fn main() {
     #[cfg(target_os = "linux")]
     std::thread::spawn(|| {
         gtk::init().expect("failed to initialise GTK");
+        if !linux_tray_host_available() {
+            // Without a tray host the icon (and its Exit menu) would be invisible,
+            // leaving a process the user can't see or close. Explain, then quit.
+            show_missing_tray_host_dialog();
+            std::process::exit(1);
+        }
         let _tray = build_tray(); // stays alive while gtk::main() runs
         gtk::main();
     });
@@ -91,6 +97,57 @@ fn build_tray() -> TrayIcon {
         .with_menu_on_left_click(false) // menu opens on right click
         .build()
         .expect("failed to create tray icon")
+}
+
+/// Checks whether the desktop can show tray icons. Linux tray icons register with the
+/// `org.kde.StatusNotifierWatcher` D-Bus service; KDE, Cinnamon, XFCE etc. provide it,
+/// but stock GNOME only does when the AppIndicator extension is enabled.
+/// If D-Bus can't be queried we assume a host exists rather than block startup.
+#[cfg(target_os = "linux")]
+fn linux_tray_host_available() -> bool {
+    use gtk::gio::{self, BusType, Cancellable, DBusCallFlags};
+    use gtk::glib::{ToVariant, VariantTy};
+
+    let Ok(bus) = gio::bus_get_sync(BusType::Session, None::<&Cancellable>) else {
+        return true;
+    };
+    bus.call_sync(
+        Some("org.freedesktop.DBus"),
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+        "NameHasOwner",
+        Some(&("org.kde.StatusNotifierWatcher",).to_variant()),
+        Some(VariantTy::new("(b)").unwrap()),
+        DBusCallFlags::NONE,
+        -1,
+        None::<&Cancellable>,
+    )
+    .ok()
+    .and_then(|reply| reply.get::<(bool,)>())
+    .is_none_or(|(has_owner,)| has_owner)
+}
+
+/// Tells the user why no tray icon will appear and how to fix it.
+#[cfg(target_os = "linux")]
+fn show_missing_tray_host_dialog() {
+    use gtk::prelude::*;
+
+    let dialog = gtk::MessageDialog::new(
+        None::<&gtk::Window>,
+        gtk::DialogFlags::MODAL,
+        gtk::MessageType::Warning,
+        gtk::ButtonsType::Ok,
+        "My Tools can't show its tray icon",
+    );
+    dialog.set_title("My Tools");
+    dialog.set_secondary_text(Some(
+        "Your desktop has no system tray. On GNOME, install the AppIndicator extension:\n\n\
+         sudo dnf install gnome-shell-extension-appindicator\n\n\
+         Log out and back in, then run:\n\n\
+         gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com",
+    ));
+    dialog.run();
+    dialog.close();
 }
 
 /// Raw 32x32 RGBA pixels of the app icon, generated from `assets/icon.svg` by `icon-gen`

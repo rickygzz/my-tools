@@ -31,7 +31,7 @@ When it starts, it puts an icon in the system tray (the menu bar on macOS). Righ
 ├── assets/
 │   ├── icon.svg           # the icon source: edit this one
 │   └── icons/             # generated from icon.svg (don't edit by hand)
-├── xtask/                 # project tasks: `cargo xtask icons`, `cargo xtask dist`
+├── xtask/                 # project tasks: `cargo xtask check`, `icons`, `dist`
 ├── packaging/
 │   ├── linux/             # .desktop menu entry and install.sh
 │   └── macos/             # Info.plist template for the .app bundle
@@ -90,6 +90,17 @@ The release binary goes to:
 | Windows | `target/release/my-tools.exe` |
 | macOS   | `target/release/my-tools`     |
 | Linux   | `target/release/my-tools`     |
+
+### Check all three OSes before pushing
+
+Each OS has its own code, which normally only compiles on that OS. This lints the Windows, macOS and Linux code from whichever one you're on, then runs the tests:
+
+```sh
+rustup target add x86_64-pc-windows-msvc aarch64-apple-darwin x86_64-unknown-linux-gnu  # once
+cargo xtask check
+```
+
+It only type-checks the other OSes' code (nothing is built or run for them), so it catches compile errors and clippy warnings, not behaviour. CI still runs everything on real Windows, macOS and Linux machines. When it checks the Windows code from another OS, `build.rs` prints a warning that the icon isn't embedded; that's expected.
 
 ## Usage
 

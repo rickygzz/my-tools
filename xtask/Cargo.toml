@@ -2,7 +2,7 @@
 name = "xtask"
 version = "0.1.0"
 edition = "2024"
-description = "Project tasks for my-tools: cargo xtask icons | dist"
+description = "Project tasks for my-tools: cargo xtask check | icons | dist"
 publish = false
 
 [dependencies]

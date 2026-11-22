@@ -9,10 +9,21 @@ winit = "0.30"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
+# Linux (X11) spotlight: keys via XInput2, click-through via XFixes. winit already uses x11rb.
+x11rb = { version = "0.13", features = ["xinput", "xfixes", "shape"] }
 
 [target."cfg(windows)".dependencies]
 softbuffer = "0.4"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_LibraryLoader"] }
+
+# macOS spotlight: Rust bindings to Apple's frameworks. Same versions tray-icon/muda already use.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSGeometry"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSColor", "NSEvent", "NSGraphics", "NSResponder", "NSScreen", "NSView", "NSWindow", "objc2-quartz-core"] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "CAShapeLayer", "CATransaction", "objc2-core-foundation", "objc2-core-graphics"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGAffineTransform", "CGColor", "CGEvent", "CGEventTypes", "CGPath"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes", "CFMachPort", "CFRunLoop"] }
 
 [build-dependencies]
 winresource = "0.1.34"

@@ -4,26 +4,43 @@
 //! stayed still for a few seconds.
 //!
 //! The timing rules (`detector`) and the animation (`presenter`) are plain Rust and work on
-//! any OS. Listening to keys in every program and drawing the overlay need OS-specific code:
-//! only Windows has it so far (`win32`). Elsewhere `unsupported` stands in and the spotlight
-//! simply never shows.
-
-// On macOS/Linux the shared logic exists but nothing calls it yet.
-#![cfg_attr(not(windows), allow(dead_code))]
+//! any OS. Listening to keys in every program and drawing the overlay need OS-specific code,
+//! one file per OS, each with the same three things: `start_listener`, `cursor_position`
+//! and `Overlay`.
+//!
+//! | OS            | File             | Keys from          | Overlay drawn with          |
+//! |---------------|------------------|--------------------|-----------------------------|
+//! | Windows       | `win32.rs`       | low-level hooks    | layered window + softbuffer |
+//! | macOS         | `macos.rs`       | CGEventTap         | NSWindow + CAShapeLayer     |
+//! | Linux (X11)   | `x11.rs`         | XInput2 raw events | ARGB X window               |
+//! | anything else | `unsupported.rs` | -                  | -                           |
+//!
+//! Wayland doesn't let apps see other apps' keys or the pointer, so on a Wayland session
+//! `x11.rs` stands down (see there).
 
 mod detector;
 mod presenter;
+mod shape;
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod unsupported;
 #[cfg(windows)]
 mod win32;
+#[cfg(target_os = "linux")]
+mod x11;
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+use macos as platform;
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 use unsupported as platform;
 #[cfg(windows)]
 use win32 as platform;
+#[cfg(target_os = "linux")]
+use x11 as platform;
 
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -31,7 +48,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-pub use detector::DoubleTapDetector;
+use detector::DoubleTapDetector;
 pub use platform::start_listener;
 use presenter::Presenter;
 
@@ -47,6 +64,69 @@ pub enum Signal {
 
 /// Whether the spotlight is showing, so the input listener only asks to hide it when it is.
 static SHOWN: AtomicBool = AtomicBool::new(false);
+
+// ---------------------------------------------------------------------------------------------
+// Input: each OS's listener reports keys and clicks here; this decides what they mean.
+// ---------------------------------------------------------------------------------------------
+
+/// What the listener needs between events. The OS calls listeners as plain functions with no
+/// `self`, so it lives in a global; the Mutex makes sharing it between threads safe.
+struct Listener {
+    detector: DoubleTapDetector,
+    notify: Box<dyn Fn(Signal) + Send>,
+}
+
+static LISTENER: Mutex<Option<Listener>> = Mutex::new(None);
+
+/// Sets who to tell when the spotlight should show or hide. Each OS's `start_listener`
+/// calls this before it starts reporting input.
+fn set_listener(notify: impl Fn(Signal) + Send + 'static) {
+    *LISTENER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Listener {
+        detector: DoubleTapDetector::default(),
+        notify: Box::new(notify),
+    });
+}
+
+/// Runs `f` with the listener. Never panics: OS callbacks often can't cope with a panic.
+fn with_listener(f: impl FnOnce(&mut Listener)) {
+    let mut guard = LISTENER.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(listener) = guard.as_mut() {
+        f(listener);
+    }
+}
+
+fn hide_if_shown(listener: &Listener) {
+    if SHOWN.load(Ordering::Relaxed) {
+        (listener.notify)(Signal::Hide);
+    }
+}
+
+/// A key went down anywhere. `is_trigger` says whether it's Left Ctrl.
+fn key_down(is_trigger: bool) {
+    let now = Instant::now();
+    with_listener(|listener| {
+        hide_if_shown(listener);
+        listener.detector.key_down(is_trigger, now);
+    });
+}
+
+/// A key went up anywhere. Shows the spotlight if this ended a double Left Ctrl tap.
+fn key_up(is_trigger: bool) {
+    let now = Instant::now();
+    with_listener(|listener| {
+        if listener.detector.key_up(is_trigger, now) {
+            (listener.notify)(Signal::Show);
+        }
+    });
+}
+
+/// A mouse button went down anywhere.
+fn click() {
+    with_listener(|listener| {
+        hide_if_shown(listener);
+        listener.detector.interrupt();
+    });
+}
 
 /// How often the spotlight moves and resizes while it shows (~60 times a second).
 const TICK: Duration = Duration::from_millis(15);
@@ -138,7 +218,7 @@ impl Spotlight {
     /// Passes on window events meant for the overlay window.
     pub fn window_event(&mut self, id: WindowId, event: &WindowEvent) {
         if let Some(overlay) = self.overlay.as_mut()
-            && overlay.id() == id
+            && overlay.owns(id)
         {
             overlay.window_event(event);
         }

@@ -1,0 +1,36 @@
+# Checks every push and pull request on Windows, macOS and Linux: the code compiles on each,
+# clippy finds nothing, and the tests pass. Each OS has its own code (src/spotlight/), so
+# this is the only place the macOS and Linux parts get built before a release.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    name: Check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install Linux libraries (GTK, AppIndicator, xdo)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxdo-dev libayatana-appindicator3-dev
+
+      # Warnings count as errors here, so they get fixed rather than pile up.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace

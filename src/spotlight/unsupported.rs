@@ -1,4 +1,4 @@
-//! Stand-in for operating systems the spotlight doesn't support yet (macOS, Linux).
+//! Stand-in for operating systems the spotlight doesn't support (e.g. FreeBSD).
 //! The listener never sends `Signal::Show`, so the overlay is never needed.
 
 use std::error::Error;
@@ -23,7 +23,7 @@ impl Overlay {
     pub fn new(_event_loop: &ActiveEventLoop) -> Result<Self, Box<dyn Error>> {
         Err("the spotlight is only available on Windows for now".into())
     }
-    pub fn id(&self) -> WindowId {
+    pub fn owns(&self, _id: WindowId) -> bool {
         match *self {}
     }
     pub fn show(&mut self) {

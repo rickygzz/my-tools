@@ -14,11 +14,14 @@ When it starts, it puts an icon in the system tray (the menu bar on macOS). Righ
 ├── src/
 │   ├── main.rs            # tray icon, menu and event loop
 │   └── spotlight/         # double-Ctrl mouse spotlight
-│       ├── mod.rs         # shows/hides/animates it (any OS)
+│       ├── mod.rs         # shows/hides/animates it, interprets keys (any OS)
 │       ├── detector.rs    # double-tap timing rules (any OS, unit-tested)
 │       ├── presenter.rs   # shrink/follow/auto-hide animation (any OS, unit-tested)
-│       ├── win32.rs       # Windows: keyboard/mouse hooks and the overlay window
-│       └── unsupported.rs # stand-in for macOS/Linux until they're implemented
+│       ├── shape.rs       # draws the circle pixel by pixel (Windows, X11; unit-tested)
+│       ├── win32.rs       # Windows: keyboard/mouse hooks, layered overlay window
+│       ├── macos.rs       # macOS: CGEventTap, NSWindow + Core Animation overlay
+│       ├── x11.rs         # Linux X11: XInput2 raw events, ARGB overlay window
+│       └── unsupported.rs # stand-in for any other OS
 ├── assets/
 │   ├── icon.svg           # the icon source: edit this one
 │   └── icons/             # generated from icon.svg (don't edit by hand)
@@ -26,7 +29,9 @@ When it starts, it puts an icon in the system tray (the menu bar on macOS). Righ
 ├── packaging/
 │   ├── linux/             # .desktop menu entry and install.sh
 │   └── macos/             # Info.plist template for the .app bundle
-└── .github/workflows/     # builds and publishes releases for all three OSes
+└── .github/workflows/
+    ├── ci.yml             # every push: clippy + tests on Windows, macOS and Linux
+    └── release.yml        # version tags: builds and publishes packages for all three
 ```
 
 Built with:
@@ -100,7 +105,7 @@ The release binary goes to:
 2. **Right-click** the icon to open the menu.
 3. Click **Exit** to close the app.
 
-### Mouse spotlight (Windows)
+### Mouse spotlight
 
 **Tap Left Ctrl twice** quickly, in any program, to find the mouse pointer. The screens dim, except for a circle around the pointer. The circle starts large and shrinks onto the pointer, then follows it.
 
@@ -108,7 +113,12 @@ The release binary goes to:
 - Clicks and typing still reach the programs underneath.
 - Each tap must be under 0.3 s, with at most 0.4 s between taps. Holding Ctrl, or shortcuts like Ctrl+C, don't trigger it.
 
-The spotlight is Windows-only for now. On macOS and Linux the app runs without it.
+| OS | Status |
+|---|---|
+| Windows | Works. Nothing to set up. |
+| macOS | Uses Left **Control**. The first time, macOS asks you to allow My Tools under **System Settings → Privacy & Security → Input Monitoring**. The spotlight starts working a few seconds after you allow it. |
+| Linux, X11 | Works. The dimming needs a compositor; GNOME, KDE, Cinnamon, XFCE and most other desktops have one. |
+| Linux, Wayland | Not available. Wayland doesn't let apps see other apps' keys or where the pointer is. Use your desktop's built-in feature instead: GNOME has **Settings → Accessibility → Locate Pointer** (press Ctrl), and KDE has the **Track Mouse** desktop effect. |
 
 ## Icon
 

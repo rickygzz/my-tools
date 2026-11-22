@@ -12,9 +12,6 @@
 use std::error::Error;
 use std::num::NonZeroU32;
 use std::rc::Rc;
-use std::sync::Mutex;
-use std::sync::atomic::Ordering;
-use std::time::Instant;
 
 use softbuffer::{Context, Rect, Surface};
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
@@ -36,28 +33,17 @@ use winit::platform::windows::WindowAttributesExtWindows;
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::{Window, WindowId, WindowLevel};
 
-use super::{DoubleTapDetector, Point, SHOWN, Signal};
+use super::shape::{self, Area, Circle, Colors};
+use super::{Point, Signal};
 
 // ---------------------------------------------------------------------------------------------
 // Input hooks
 // ---------------------------------------------------------------------------------------------
 
-/// State the hook functions need. Windows calls them as plain functions with no `self`, so it
-/// lives in a global. Only the hook thread touches it; the Mutex makes that provably safe.
-struct HookState {
-    detector: DoubleTapDetector,
-    notify: Box<dyn Fn(Signal) + Send>,
-}
-
-static HOOK_STATE: Mutex<Option<HookState>> = Mutex::new(None);
-
 /// Starts listening to every key and click, calling `notify` when the spotlight should show
 /// (Left Ctrl tapped twice) or hide (any key or click while it shows).
 pub fn start_listener(notify: impl Fn(Signal) + Send + 'static) {
-    *HOOK_STATE.lock().unwrap_or_else(|e| e.into_inner()) = Some(HookState {
-        detector: DoubleTapDetector::default(),
-        notify: Box::new(notify),
-    });
+    super::set_listener(notify);
 
     // Low-level hooks run on the thread that installed them, and only while that thread is
     // waiting for messages. A thread of their own keeps them responsive whatever the app does.
@@ -84,38 +70,16 @@ pub fn start_listener(notify: impl Fn(Signal) + Send + 'static) {
     }
 }
 
-/// Runs `f` with the hook state. Never panics: a panic inside a hook would abort the program.
-fn with_state(f: impl FnOnce(&mut HookState)) {
-    let mut guard = HOOK_STATE.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(state) = guard.as_mut() {
-        f(state);
-    }
-}
-
-fn hide_if_shown(state: &HookState) {
-    if SHOWN.load(Ordering::Relaxed) {
-        (state.notify)(Signal::Hide);
-    }
-}
-
 /// Called by Windows for every key press and release, in any program.
 unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code == HC_ACTION as i32 {
         // SAFETY: for HC_ACTION, `lparam` points to a KBDLLHOOKSTRUCT describing the key.
         let info = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
         let is_left_ctrl = info.vkCode == u32::from(VK_LCONTROL);
-        let now = Instant::now();
 
         match wparam as u32 {
-            WM_KEYDOWN | WM_SYSKEYDOWN => with_state(|state| {
-                hide_if_shown(state);
-                state.detector.key_down(is_left_ctrl, now);
-            }),
-            WM_KEYUP | WM_SYSKEYUP => with_state(|state| {
-                if state.detector.key_up(is_left_ctrl, now) {
-                    (state.notify)(Signal::Show);
-                }
-            }),
+            WM_KEYDOWN | WM_SYSKEYDOWN => super::key_down(is_left_ctrl),
+            WM_KEYUP | WM_SYSKEYUP => super::key_up(is_left_ctrl),
             _ => {}
         }
     }
@@ -131,10 +95,7 @@ unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) 
         WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_XBUTTONDOWN
     );
     if code == HC_ACTION as i32 && is_click {
-        with_state(|state| {
-            hide_if_shown(state);
-            state.detector.interrupt();
-        });
+        super::click();
     }
     // SAFETY: forwarding exactly what Windows gave us.
     unsafe { CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam) }
@@ -163,49 +124,16 @@ const OPACITY: u8 = 153;
 /// Width of the white ring, in pixels at 100% scale.
 const RING_WIDTH: f64 = 4.0;
 
-/// A rectangle in pixels: `left..right`, `top..bottom` (right/bottom excluded).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Area {
-    left: i32,
-    top: i32,
-    right: i32,
-    bottom: i32,
-}
+const COLORS: Colors = Colors { dim: DIM, ring: RING, hole: KEY_COLOR };
 
-impl Area {
-    fn width(&self) -> i32 {
-        self.right - self.left
-    }
-    fn height(&self) -> i32 {
-        self.bottom - self.top
-    }
-    fn is_empty(&self) -> bool {
-        self.width() <= 0 || self.height() <= 0
-    }
-    fn union(&self, other: &Area) -> Area {
-        Area {
-            left: self.left.min(other.left),
-            top: self.top.min(other.top),
-            right: self.right.max(other.right),
-            bottom: self.bottom.max(other.bottom),
-        }
-    }
-    fn clamp_to(&self, width: i32, height: i32) -> Area {
-        Area {
-            left: self.left.clamp(0, width),
-            top: self.top.clamp(0, height),
-            right: self.right.clamp(0, width),
-            bottom: self.bottom.clamp(0, height),
-        }
-    }
-    fn to_rect(self) -> Option<Rect> {
-        Some(Rect {
-            x: u32::try_from(self.left).ok()?,
-            y: u32::try_from(self.top).ok()?,
-            width: NonZeroU32::new(u32::try_from(self.width()).ok()?)?,
-            height: NonZeroU32::new(u32::try_from(self.height()).ok()?)?,
-        })
-    }
+/// softbuffer's name for an area of the window.
+fn to_rect(area: Area) -> Option<Rect> {
+    Some(Rect {
+        x: u32::try_from(area.left).ok()?,
+        y: u32::try_from(area.top).ok()?,
+        width: NonZeroU32::new(u32::try_from(area.width()).ok()?)?,
+        height: NonZeroU32::new(u32::try_from(area.height()).ok()?)?,
+    })
 }
 
 /// The rectangle around all monitors, in physical pixels (winit makes the app DPI-aware).
@@ -272,8 +200,9 @@ impl Overlay {
         Ok(overlay)
     }
 
-    pub fn id(&self) -> WindowId {
-        self.window.id()
+    /// Whether `id` is this overlay's window.
+    pub fn owns(&self, id: WindowId) -> bool {
+        self.window.id() == id
     }
 
     /// Makes the window see-through where it's magenta, 60% opaque elsewhere, click-through,
@@ -311,7 +240,8 @@ impl Overlay {
     pub fn hide(&mut self) {
         // Clear the hole first, so the next show doesn't flash the old circle for a frame.
         if let Some(hole) = self.hole.take() {
-            self.paint(|buffer, width| fill(buffer, width, hole, DIM), hole);
+            let whole = Area::new(0, 0, self.bounds.width(), self.bounds.height());
+            self.paint(|buffer| shape::fill(buffer, whole, hole, DIM), hole);
         }
         self.last = None;
         // SAFETY: `hwnd` is our live window.
@@ -354,39 +284,30 @@ impl Overlay {
         self.last = Some((center, radius));
 
         let scale = self.window.scale_factor();
-        let radius = f64::from(radius) * scale;
         let ring = (RING_WIDTH * scale).round().max(1.0);
-        let inner = radius - ring / 2.0;
-        let outer = radius + ring / 2.0;
-
         // Centre in window pixels.
-        let (cx, cy) = (center.0 - self.bounds.left, center.1 - self.bounds.top);
-        let reach = outer.ceil() as i32 + 1;
+        let center = (center.0 - self.bounds.left, center.1 - self.bounds.top);
+        let circle = Circle::new(center, f64::from(radius) * scale, ring);
+
         let (width, height) = (self.bounds.width(), self.bounds.height());
-        let area = Area {
-            left: cx - reach,
-            top: cy - reach,
-            right: cx + reach + 1,
-            bottom: cy + reach + 1,
-        }
-        .clamp_to(width, height);
+        let whole = Area::new(0, 0, width, height);
+        let area = circle.bounds(width, height);
 
         let previous = self.hole;
         let full = self.needs_full;
         let damage = match previous {
-            _ if full => Area { left: 0, top: 0, right: width, bottom: height },
+            _ if full => whole,
             Some(previous) => previous.union(&area),
             None => area,
         };
 
         let drawn = self.paint(
-            |buffer, width| {
+            |buffer| {
                 if full {
                     buffer.fill(DIM);
-                } else if let Some(previous) = previous {
-                    fill(buffer, width, previous, DIM);
                 }
-                circle(buffer, width, area, (cx, cy), inner, outer);
+                // Repaint the old circle's area too, which puts the dim back where it was.
+                circle.paint(buffer, whole, damage, COLORS);
             },
             damage,
         );
@@ -398,8 +319,8 @@ impl Overlay {
 
     /// Gets the pixel buffer, lets `draw` change it, and puts `damage` on screen.
     /// Returns false if drawing wasn't possible (the next draw then redraws everything).
-    fn paint(&mut self, draw: impl FnOnce(&mut [u32], i32), damage: Area) -> bool {
-        let width = self.bounds.width();
+    fn paint(&mut self, draw: impl FnOnce(&mut [u32]), damage: Area) -> bool {
+        let (width, height) = (self.bounds.width(), self.bounds.height());
         let mut buffer = match self.surface.buffer_mut() {
             Ok(buffer) => buffer,
             Err(error) => {
@@ -412,8 +333,8 @@ impl Overlay {
             self.needs_full = true;
             return false;
         }
-        draw(&mut buffer, width);
-        let presented = match damage.clamp_to(width, self.bounds.height()).to_rect() {
+        draw(&mut buffer);
+        let presented = match to_rect(damage.clamp_to(width, height)) {
             Some(rect) => buffer.present_with_damage(&[rect]),
             None => Ok(()),
         };
@@ -446,37 +367,3 @@ impl Overlay {
     }
 }
 
-/// Fills `area` of the buffer with one colour.
-fn fill(buffer: &mut [u32], width: i32, area: Area, color: u32) {
-    if area.is_empty() {
-        return;
-    }
-    for y in area.top..area.bottom {
-        let row = (y * width) as usize;
-        buffer[row + area.left as usize..row + area.right as usize].fill(color);
-    }
-}
-
-/// Within `area`: see-through inside `inner`, white between `inner` and `outer`, dim outside.
-/// No anti-aliasing on purpose: a blend with magenta would show as pink fringes.
-fn circle(buffer: &mut [u32], width: i32, area: Area, center: Point, inner: f64, outer: f64) {
-    if area.is_empty() {
-        return;
-    }
-    let (inner2, outer2) = (inner * inner, outer * outer);
-    for y in area.top..area.bottom {
-        let dy = f64::from(y - center.1);
-        let row = (y * width) as usize;
-        for x in area.left..area.right {
-            let dx = f64::from(x - center.0);
-            let distance2 = dx * dx + dy * dy;
-            buffer[row + x as usize] = if distance2 <= inner2 {
-                KEY_COLOR
-            } else if distance2 <= outer2 {
-                RING
-            } else {
-                DIM
-            };
-        }
-    }
-}

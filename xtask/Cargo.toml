@@ -1,0 +1,11 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2024"
+description = "Project tasks for my-tools: cargo xtask icons | dist"
+publish = false
+
+[dependencies]
+icns = "0.5.0"
+ico = "0.6.0"
+resvg = "0.50.0"

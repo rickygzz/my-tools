@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  My Tools app icon: the single source for every platform's icon.
+  After editing, regenerate the PNG/ICO/ICNS files:  cd icon-gen && cargo run
+  Keep shapes bold and simple; the tray shows this at 16-32 px.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F0803C"/>
+      <stop offset="1" stop-color="#C4501E"/>
+    </linearGradient>
+
+    <!-- White = keep, black = cut out of the wrench. -->
+    <mask id="wrench-cutouts" maskUnits="userSpaceOnUse" x="0" y="0" width="256" height="256">
+      <rect width="256" height="256" fill="#FFFFFF"/>
+      <!-- jaw opening -->
+      <circle cx="176" cy="128" r="16" fill="#000000"/>
+      <rect x="176" y="112" width="60" height="32" fill="#000000"/>
+      <!-- hanging hole in the handle -->
+      <circle cx="58" cy="128" r="7" fill="#000000"/>
+    </mask>
+  </defs>
+
+  <!-- Rounded-square background -->
+  <rect id="tile" x="12" y="12" width="232" height="232" rx="52" fill="url(#background)"/>
+
+  <!-- Wrench: drawn horizontally, then turned 45 degrees -->
+  <g id="wrench" transform="rotate(-45 128 128)">
+    <g mask="url(#wrench-cutouts)" fill="#FFFFFF">
+      <rect id="handle" x="40" y="114" width="140" height="28" rx="14"/>
+      <circle id="head" cx="176" cy="128" r="42"/>
+    </g>
+  </g>
+</svg>

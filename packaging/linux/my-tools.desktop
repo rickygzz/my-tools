@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=My Tools
+Comment=System tray utilities
+Exec=my-tools
+Icon=my-tools
+Terminal=false
+Categories=Utility;

@@ -1,0 +1,12 @@
+# Rust build output, in any project in this repo
+target/
+
+# Packages made by `cargo xtask dist`
+dist/
+
+# Editor / OS clutter
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store

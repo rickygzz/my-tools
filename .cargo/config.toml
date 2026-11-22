@@ -1,0 +1,3 @@
+# Lets you type `cargo xtask <task>` from anywhere inside my-tools.
+[alias]
+xtask = "run --package xtask --release --"

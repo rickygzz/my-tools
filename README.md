@@ -2,7 +2,7 @@
 
 A small cross-platform system tray app written in Rust. It runs on **Windows**, **macOS** and **Linux**.
 
-When it starts, it puts an icon in the system tray (the menu bar on macOS). Right-click the icon to open a menu with an **Exit** option.
+When it starts, it puts an icon in the system tray (the menu bar on macOS). Right-click the icon to open a menu with **Calculator** and **Exit**.
 
 ## Project layout
 
@@ -12,11 +12,20 @@ When it starts, it puts an icon in the system tray (the menu bar on macOS). Righ
 ├── Cargo.toml             # project settings and dependencies
 ├── build.rs               # embeds the icon into the Windows .exe
 ├── src/
-│   ├── main.rs            # event loop: starts the tray and spotlight, handles Exit
-│   ├── tray/              # tray icon and its Exit menu
+│   ├── main.rs            # event loop: starts the tray, spotlight and calculator
+│   ├── tray/              # tray icon and its menu (Calculator, Exit)
 │   │   ├── mod.rs         # shared tooltip, label and icon pixels
 │   │   ├── windows_macos.rs # Windows, macOS: tray-icon crate
 │   │   └── linux.rs       # Linux: ksni over D-Bus, GNOME extension setup
+│   ├── calculator/        # calculator window (Ctrl+Alt+C, or the tray menu)
+│   │   ├── mod.rs         # opens it on the screen with the mouse
+│   │   ├── engine/        # line → result: tokenizer, parser, evaluator, units, dates,
+│   │   │                  #   time zones, ipconfig() (any OS, unit-tested)
+│   │   ├── suggester.rs   # what to offer while typing (any OS, unit-tested)
+│   │   ├── presenter.rs   # history, names, Up/Down, suggestions (any OS, unit-tested)
+│   │   ├── view.rs        # draws the window with egui, handles its keys
+│   │   ├── window.rs      # the winit window egui draws into, through wgpu
+│   │   └── hotkey.rs      # Ctrl+Alt+C in every app
 │   └── spotlight/         # mouse spotlight (double Ctrl; a shortcut on Wayland)
 │       ├── mod.rs         # shows/hides/animates it, interprets keys (any OS)
 │       ├── detector.rs    # double-tap timing rules (any OS, unit-tested)
@@ -46,6 +55,9 @@ Built with:
 - [`tray-icon`](https://crates.io/crates/tray-icon) (Windows, macOS): tray icon and context menu
 - [`ksni`](https://crates.io/crates/ksni) (Linux): tray icon and context menu over D-Bus (StatusNotifierItem), no GTK needed
 - [`zbus`](https://crates.io/crates/zbus) (Linux): D-Bus calls for GNOME extension setup and notifications
+- [`egui`](https://crates.io/crates/egui), with [`egui-winit`](https://crates.io/crates/egui-winit) and [`egui-wgpu`](https://crates.io/crates/egui-wgpu): the calculator's window
+- [`rust_decimal`](https://crates.io/crates/rust_decimal), [`chrono`](https://crates.io/crates/chrono), [`chrono-tz`](https://crates.io/crates/chrono-tz): the calculator's exact decimals, dates and time zones
+- [`global-hotkey`](https://crates.io/crates/global-hotkey): Ctrl+Alt+C in every app
 
 ## Prerequisites
 
@@ -106,7 +118,37 @@ It only type-checks the other OSes' code (nothing is built or run for them), so 
 
 1. Start the app. An orange wrench icon shows up in the tray.
 2. **Right-click** the icon to open the menu.
-3. Click **Exit** to close the app.
+3. Click **Calculator** to open the calculator, or **Exit** to close the app.
+
+### Calculator
+
+Press **Ctrl+Alt+C** in any program (or choose **Calculator** in the tray menu). A small bar opens on the screen with the mouse, ready to type. Type a line and press **Enter**:
+
+| You type | You get |
+|---|---|
+| `2+2*3` | `8` |
+| `0.1+0.2` | `0.3` (exact decimals, up to 28 of them) |
+| `sqrt(2)`, `round(3.14159, 2)`, `max(1, 5, 3)` | `1.4142135623730950488016887242`, `3.14`, `5` |
+| `10 km to mi`, `100 C to F`, `1 GiB to MB` | `6.213711922 mi`, `212 F`, `1,073.741824 MB` |
+| `today + 30 d`, `2026-12-25 - today` | a date with its weekday, a number of days |
+| `10:30 Mexico to India`, `3 pm Miami to Sao Paulo` | the time there, with its UTC offset |
+| `rate = 1500`, then `rate * 12` | names keep values; `ans` is the last answer |
+| `ipconfig()` | this computer's IP address and gateway |
+
+| Key | Does |
+|---|---|
+| **Enter** | calculates; the line stays, the result shows below it |
+| **Esc** | hides the calculator (it also hides when you click elsewhere) |
+| **Ctrl+H**, or the arrow at the right | shows or hides the history of this session |
+| **Ctrl+C** with nothing selected | copies the result |
+| **Up** / **Down** | brings back the lines entered before |
+| **Ctrl+Arrow** (with Shift, further) | moves the window; dragging it with the mouse does too |
+
+While you type, a list offers what can come next: functions and names where a value starts, units after a number, places after a time. **Down**/**Up** go through it, **Tab** or **Enter** writes the one chosen, **Esc** closes it. Choosing the first unit or place writes `to` after it, so the list goes on with the second.
+
+An error says what's wrong and selects the character at fault: `1/0` gives `Division by zero at position 2`.
+
+The history, the names and the lines entered last until the app exits. On **Wayland**, apps can't register keys like Ctrl+Alt+C, so open the calculator from the tray menu there. If another app already uses Ctrl+Alt+C, the tray menu works too.
 
 ### Mouse spotlight
 

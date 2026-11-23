@@ -6,6 +6,9 @@ mod calculator;
 mod hotkeys;
 mod spotlight;
 mod tray;
+// Not used by the app yet: the OS parts and the hotkeys come in the next steps.
+#[allow(dead_code)]
+mod zones;
 
 use std::time::Instant;
 

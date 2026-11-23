@@ -6,6 +6,8 @@ edition = "2024"
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 chrono-tz = { version = "0.10.4", features = ["case-insensitive"] }
+# The user's config folder, for zones.cfg. Already in Cargo.lock through other crates.
+dirs = "7"
 egui = { version = "0.37", features = ["default_fonts"] }
 egui-wgpu = { version = "0.37", features = ["winit"] }
 egui-winit = { version = "0.37", default-features = false, features = ["clipboard", "links", "wayland", "x11"] }

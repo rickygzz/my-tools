@@ -41,6 +41,8 @@ When it starts, it puts an icon in the system tray (the menu bar on macOS). Righ
 │   │   ├── x11.rs         # Linux X11: EWMH messages to the window manager, RandR
 │   │   ├── x11_drag.rs    # Linux X11: XInput2 raw mouse events, ARGB overlay window
 │   │   └── editor/        # the zone editor window (tray menu): presenter (unit-tested), egui view
+│   ├── toast.rs           # short messages in the corner of the screen, for any part of the app
+│   ├── egui_window.rs     # a winit window egui draws into (the zone editor, toasts)
 │   └── spotlight/         # mouse spotlight (double Ctrl; a shortcut on Wayland)
 │       ├── mod.rs         # shows/hides/animates it, interprets keys (any OS)
 │       ├── detector.rs    # double-tap timing rules (any OS, unit-tested)
@@ -178,6 +180,7 @@ These keys move the window you're working in (**Win** is **Command** on macOS):
 | **Ctrl+Alt+Win+1** to **9** | moves it into that zone of its monitor |
 | **Ctrl+Alt+Win+Right** / **Left** | moves it to the next or previous zone, around the end; a window in no zone goes to the first or last |
 | **Ctrl+Alt+Win+M** | moves it to the monitor the mouse is on, at the same place there |
+| **Ctrl+Alt+Win+T** | keeps it on top of the other windows, even when you click another one (a video, notes, a chat beside your work); again lets it go behind others. A message in the corner of the screen says which, as the window looks the same. Not on macOS, which doesn't let one app do this to another's windows. |
 
 **The window zones editor:** right-click the tray icon and choose **Edit window zones...**. It shows a monitor at its real shape, with its zones over it, numbered, gaps included.
 
@@ -206,7 +209,7 @@ Zone = 0, 0, 60, 100        # your own zones, in percent: left, top, width, heig
 Zone = 60, 0, 40, 100
 ```
 
-A line that can't be used is skipped, and the reason, with its line number, goes to stderr (run from a terminal to see it).
+A line that can't be used is skipped, and a message in the corner of the screen says why, with its line number (once, until the problems change). Problems moving a window, such as one run as administrator, show there too.
 
 | OS | Status |
 |---|---|

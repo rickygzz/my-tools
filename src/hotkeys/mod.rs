@@ -33,6 +33,8 @@ pub enum Action {
     NextZone,
     /// Move the active window to the monitor the mouse pointer is on.
     WindowToMouse,
+    /// Keep the active window on top of the others, or no longer.
+    AlwaysOnTop,
     PreviousZone,
 }
 
@@ -40,12 +42,13 @@ pub enum Action {
 const ZONE_KEYS: usize = 9;
 
 impl Action {
-    pub const ALL: [Action; 5 + ZONE_KEYS] = [
+    pub const ALL: [Action; 6 + ZONE_KEYS] = [
         Action::Calculator,
         Action::Spotlight,
         Action::NextZone,
         Action::PreviousZone,
         Action::WindowToMouse,
+        Action::AlwaysOnTop,
         Action::Zone(1),
         Action::Zone(2),
         Action::Zone(3),
@@ -59,7 +62,7 @@ impl Action {
 
     /// Whether it moves windows into zones, which Wayland doesn't allow.
     pub fn is_zone(self) -> bool {
-        matches!(self, Action::Zone(_) | Action::NextZone | Action::PreviousZone | Action::WindowToMouse)
+        matches!(self, Action::Zone(_) | Action::NextZone | Action::PreviousZone | Action::WindowToMouse | Action::AlwaysOnTop)
     }
 
     /// Its name in `--show <name>`, and its ID with the portal (the desktop remembers the
@@ -74,6 +77,7 @@ impl Action {
             Action::NextZone => "next-zone",
             Action::PreviousZone => "previous-zone",
             Action::WindowToMouse => "window-to-mouse",
+            Action::AlwaysOnTop => "always-on-top",
         }
     }
 
@@ -101,6 +105,7 @@ impl Action {
             Action::NextZone => "Move the window to the next zone",
             Action::PreviousZone => "Move the window to the previous zone",
             Action::WindowToMouse => "Move the window to the screen the mouse is on",
+            Action::AlwaysOnTop => "Keep the window on top, or no longer",
         }
     }
 
@@ -128,6 +133,7 @@ impl Action {
             Action::NextZone => "Ctrl+Alt+Super+Right",
             Action::PreviousZone => "Ctrl+Alt+Super+Left",
             Action::WindowToMouse => "Ctrl+Alt+Super+M",
+            Action::AlwaysOnTop => "Ctrl+Alt+Super+T",
         }
     }
 }

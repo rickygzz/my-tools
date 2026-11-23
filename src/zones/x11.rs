@@ -31,6 +31,9 @@ x11rb::atom_manager! {
         _NET_WM_WINDOW_TYPE,
         _NET_WM_WINDOW_TYPE_NORMAL,
         _NET_WM_WINDOW_TYPE_DIALOG,
+        _NET_WM_STATE_ABOVE,
+        _NET_WM_NAME,
+        UTF8_STRING,
     }
 }
 
@@ -208,4 +211,23 @@ fn intersection(one: Rect, other: Rect) -> Option<Rect> {
 /// Every monitor connected now, for the zone editor.
 pub fn monitors() -> Vec<Monitor> {
     SystemDesktop::new().map(|desktop| desktop.monitors()).unwrap_or_default()
+}
+
+/// Keeps the active window on top of the others, or no longer. Returns its title and whether
+/// it's on top now; `Err` says why it couldn't, for the user.
+pub fn toggle_on_top() -> Result<(String, bool), String> {
+    let desktop = SystemDesktop::new()?;
+    let window = desktop.active_window().ok_or("There's no window to keep on top.")?;
+    let atoms = &desktop.atoms;
+    let on = !desktop.cardinals(window, atoms._NET_WM_STATE, AtomEnum::ATOM).contains(&atoms._NET_WM_STATE_ABOVE);
+    let action = if on { ADD } else { REMOVE };
+    desktop.send(window, atoms._NET_WM_STATE, [action, atoms._NET_WM_STATE_ABOVE, 0, FROM_PAGER, 0])?;
+    let title = desktop
+        .conn
+        .get_property(false, window, atoms._NET_WM_NAME, atoms.UTF8_STRING, 0, 256)
+        .ok()
+        .and_then(|cookie| cookie.reply().ok())
+        .map(|reply| String::from_utf8_lossy(&reply.value).into_owned())
+        .unwrap_or_default();
+    Ok((title, on))
 }

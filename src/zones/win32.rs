@@ -14,9 +14,9 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     GA_ROOT, GWL_EXSTYLE, GWL_STYLE, GetAncestor, GetCursorPos, GetForegroundWindow, GetShellWindow,
-    GetWindowLongPtrW, GetWindowRect, IsIconic, IsWindowVisible, IsZoomed, SW_RESTORE, SW_SHOWMAXIMIZED,
-    SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER, SetWindowPos, ShowWindow, WS_CAPTION, WS_EX_TOOLWINDOW,
-    WS_THICKFRAME,
+    GetWindowLongPtrW, GetWindowRect, GetWindowTextW, HWND_NOTOPMOST, HWND_TOPMOST, IsIconic, IsWindowVisible,
+    IsZoomed, SW_RESTORE, SW_SHOWMAXIMIZED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER,
+    SetWindowPos, ShowWindow, WS_CAPTION, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_THICKFRAME,
 };
 use windows_sys::core::BOOL;
 
@@ -179,6 +179,28 @@ fn set_visible_bounds(window: HWND, bounds: Rect) -> Result<(), u32> {
     if moved == 0 { Err(unsafe { GetLastError() }) } else { Ok(()) }
 }
 
+/// Keeps the active window on top of the others, or no longer. Returns its title and whether
+/// it's on top now; `Err` says why it couldn't, for the user.
+pub fn toggle_on_top() -> Result<(String, bool), String> {
+    // SAFETY: plain calls on a window handle.
+    unsafe {
+        let window = GetForegroundWindow();
+        if !is_movable(window) {
+            return Err(NO_WINDOW_ON_TOP.into());
+        }
+        let on = GetWindowLongPtrW(window, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST == 0;
+        let after = if on { HWND_TOPMOST } else { HWND_NOTOPMOST };
+        if SetWindowPos(window, after, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE) == 0 {
+            return Err("Windows didn't let My Tools change that window: it may run as administrator.".into());
+        }
+        let mut title = [0u16; 512];
+        let length = GetWindowTextW(window, title.as_mut_ptr(), title.len() as i32);
+        Ok((String::from_utf16_lossy(&title[..length.max(0) as usize]), on))
+    }
+}
+
+const NO_WINDOW_ON_TOP: &str = "There's no window to keep on top.";
+
 /// Every monitor connected now, for the zone editor.
 pub fn monitors() -> Vec<Monitor> {
     SystemDesktop.monitors()
@@ -241,5 +263,37 @@ mod tests {
         }
         println!("zone {zone:?}, seen {seen:?}, with the invisible border {:?}", rect(outer));
         assert_eq!(seen, zone);
+    }
+
+    /// Turns "always on top" on and off for a window of its own, once it's the active one (it
+    /// stops otherwise, so no other window is changed). `cargo test -- --ignored`.
+    #[test]
+    #[ignore = "opens a window on the screen"]
+    fn a_real_window_is_kept_on_top_and_let_go() {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{SW_SHOW, SetForegroundWindow};
+        let name: Vec<u16> = "my-tools on top test ".encode_utf16().collect();
+        // SAFETY: a plain window class and window, destroyed at the end.
+        let window = unsafe {
+            let instance = GetModuleHandleW(std::ptr::null());
+            let class = WNDCLASSW { lpfnWndProc: Some(DefWindowProcW), hInstance: instance, lpszClassName: name.as_ptr(), ..std::mem::zeroed() };
+            RegisterClassW(&class);
+            let window = CreateWindowExW(0, name.as_ptr(), name.as_ptr(), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 400, 300, null_mut(), null_mut(), instance, std::ptr::null());
+            ShowWindow(window, SW_SHOW);
+            SetForegroundWindow(window);
+            window
+        };
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        // SAFETY: plain calls on our own window.
+        let topmost = || unsafe { GetWindowLongPtrW(window, GWL_EXSTYLE) } as u32 & WS_EX_TOPMOST != 0;
+        if unsafe { GetForegroundWindow() } == window {
+            assert_eq!(toggle_on_top(), Ok(("my-tools on top test".to_owned(), true)));
+            assert!(topmost());
+            assert_eq!(toggle_on_top(), Ok(("my-tools on top test".to_owned(), false)));
+            assert!(!topmost());
+        } else {
+            println!("skipped: Windows didn't make the test window the active one");
+        }
+        // SAFETY: our own window.
+        unsafe { DestroyWindow(window) };
     }
 }

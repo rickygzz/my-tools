@@ -65,6 +65,8 @@ pub enum Command {
     Previous,
     /// Move the active window to the monitor the mouse pointer is on.
     ToMouse,
+    /// Keep the active window on top of the others, or no longer.
+    ToggleOnTop,
 }
 
 /// Starts telling of drags of other apps' windows, with `notify` called (on any thread) for
@@ -93,12 +95,24 @@ impl Zones {
             report("Window zones don't work on Wayland: it doesn't let apps move other apps' windows.");
             return;
         }
+        if command == Command::ToggleOnTop {
+            match system::toggle_on_top() {
+                Ok((title, on)) => {
+                    let window = if title.is_empty() { "The window".to_owned() } else { title };
+                    let body = if on { format!("{window} stays on top of the other windows.") } else { format!("{window} is no longer on top.") };
+                    crate::toast::post("Always on top", &body);
+                }
+                Err(problem) => crate::toast::post("Always on top", &problem),
+            }
+            return;
+        }
         let layouts = layouts(&mut self.reported);
         let moved = system::SystemDesktop::new().and_then(|mut desktop| match command {
             Command::MoveTo(number) => mover::move_to(&mut desktop, &layouts, number),
             Command::Next => mover::move_by(&mut desktop, &layouts, true),
             Command::Previous => mover::move_by(&mut desktop, &layouts, false),
             Command::ToMouse => mover::move_to_pointer(&mut desktop),
+            Command::ToggleOnTop => Ok(()),
         });
         if let Err(problem) = moved {
             report(&problem);
@@ -208,7 +222,7 @@ fn layouts(reported: &mut String) -> Layouts {
     result.layouts
 }
 
-/// Tells the user why something didn't work. For now on stderr; a notification would be better.
+/// Tells the user why something didn't work, in a toast.
 fn report(problem: &str) {
-    eprintln!("zones: {problem}");
+    crate::toast::post("Window zones", problem);
 }

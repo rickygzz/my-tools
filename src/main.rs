@@ -5,6 +5,8 @@
 mod calculator;
 mod hotkeys;
 mod spotlight;
+mod toast;
+mod egui_window;
 mod tray;
 mod zones;
 
@@ -59,6 +61,7 @@ struct App {
     spotlight: Spotlight,
     calculator: Calculator,
     zones: Zones,
+    toaster: toast::Toaster,
 }
 
 impl ApplicationHandler<UserEvent> for App {
@@ -105,6 +108,7 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::Show(Action::NextZone, _) => self.zones.run(zones::Command::Next),
             UserEvent::Show(Action::PreviousZone, _) => self.zones.run(zones::Command::Previous),
             UserEvent::Show(Action::WindowToMouse, _) => self.zones.run(zones::Command::ToMouse),
+            UserEvent::Show(Action::AlwaysOnTop, _) => self.zones.run(zones::Command::ToggleOnTop),
             UserEvent::Spotlight(signal) => self.spotlight.handle(event_loop, signal),
             UserEvent::Drag(signal) => self.zones.drag(event_loop, signal),
             UserEvent::EditZones => self.zones.edit(event_loop),
@@ -114,19 +118,23 @@ impl ApplicationHandler<UserEvent> for App {
     /// Called when there's nothing left to handle. Sleep until the next event, or until the
     /// spotlight's next animation step or the calculator's next frame (a blinking caret).
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.toaster.show_posted(event_loop);
         let now = Instant::now();
         self.calculator.wake(now);
         self.zones.wake(now);
-        let next = [self.spotlight.tick(), self.calculator.next_wake(), self.zones.next_wake()].into_iter().flatten().min();
+        self.toaster.wake(now);
+        let next = [self.spotlight.tick(), self.calculator.next_wake(), self.zones.next_wake(), self.toaster.next_wake()].into_iter().flatten().min();
         match next {
             Some(next) => event_loop.set_control_flow(ControlFlow::WaitUntil(next)),
             None => event_loop.set_control_flow(ControlFlow::Wait),
         }
     }
 
-    fn window_event(&mut self, _event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         if self.calculator.owns(id) {
             self.calculator.window_event(&event);
+        } else if self.toaster.owns(id) {
+            self.toaster.window_event(event_loop, &event);
         } else if self.zones.owns(id) {
             self.zones.window_event(id, &event);
         } else {
@@ -143,6 +151,7 @@ impl ApplicationHandler<UserEvent> for App {
         self.spotlight = Spotlight::default();
         self.calculator.close();
         self.zones.close();
+        self.toaster.close();
     }
 }
 
@@ -188,6 +197,7 @@ fn main() {
         spotlight: Spotlight::default(),
         calculator: Calculator::default(),
         zones: Zones::default(),
+        toaster: toast::Toaster::default(),
     };
     event_loop.run_app(&mut app).expect("event loop failed");
 }

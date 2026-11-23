@@ -205,3 +205,8 @@ fn screens(mtm: MainThreadMarker) -> Vec<Monitor> {
         })
         .collect()
 }
+
+/// macOS has no way for one app to keep another app's windows on top.
+pub fn toggle_on_top() -> Result<(String, bool), String> {
+    Err("macOS doesn't let one app keep another app's windows on top.".into())
+}

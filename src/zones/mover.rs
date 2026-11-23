@@ -20,7 +20,7 @@ pub fn move_to(desktop: &mut impl Desktop, layouts: &Layouts, number: usize) -> 
 pub fn move_by(desktop: &mut impl Desktop, layouts: &Layouts, forward: bool) -> Result<(), String> {
     let (window, zones) = active_window_zones(desktop, layouts)?;
     let count = zones.len();
-    let next = match (zone_of(&zones, desktop.window_bounds(window)), forward) {
+    let next = match (zone_of(&zones, desktop.window_bounds(window.clone())), forward) {
         (Some(index), true) => (index + 1) % count,
         (Some(index), false) => (index + count - 1) % count,
         (None, true) => 0,
@@ -35,7 +35,7 @@ pub fn move_by(desktop: &mut impl Desktop, layouts: &Layouts, forward: bool) -> 
 pub fn move_to_pointer(desktop: &mut impl Desktop) -> Result<(), String> {
     let window = desktop.active_window().ok_or(NO_WINDOW)?;
     let (x, y) = desktop.pointer();
-    let from = desktop.monitor_of(window);
+    let from = desktop.monitor_of(window.clone());
     let Some(to) = desktop.monitors().into_iter().find(|monitor| monitor.bounds.contains(x, y)) else {
         return Ok(());
     };
@@ -43,12 +43,12 @@ pub fn move_to_pointer(desktop: &mut impl Desktop) -> Result<(), String> {
         return Ok(());
     }
 
-    let maximized = desktop.is_maximized(window);
+    let maximized = desktop.is_maximized(window.clone());
     if maximized {
-        desktop.set_maximized(window, false);
+        desktop.set_maximized(window.clone(), false);
     }
-    let bounds = move_to_area(desktop.window_bounds(window), from.work_area, to.work_area);
-    let moved = desktop.move_window(window, bounds);
+    let bounds = move_to_area(desktop.window_bounds(window.clone()), from.work_area, to.work_area);
+    let moved = desktop.move_window(window.clone(), bounds);
     // Maximized again even when it couldn't move: as it was.
     if maximized {
         desktop.set_maximized(window, true);
@@ -60,7 +60,7 @@ const NO_WINDOW: &str = "There's no window to move.";
 
 fn active_window_zones<D: Desktop>(desktop: &D, layouts: &Layouts) -> Result<(D::Window, Vec<Rect>), String> {
     let window = desktop.active_window().ok_or(NO_WINDOW)?;
-    let monitor = desktop.monitor_of(window);
+    let monitor = desktop.monitor_of(window.clone());
     Ok((window, place(layouts.for_monitor(monitor.bounds), monitor.work_area)))
 }
 

@@ -26,6 +26,15 @@ When it starts, it puts an icon in the system tray (the menu bar on macOS). Righ
 │   │   ├── view.rs        # draws the window with egui, handles its keys
 │   │   ├── window.rs      # the winit window egui draws into, through wgpu
 │   │   └── hotkey.rs      # Ctrl+Alt+C in every app
+│   ├── zones/             # window zones: hotkeys put the active window in a zone
+│   │   ├── layout.rs      # zones in percent, layouts, templates (any OS, unit-tested)
+│   │   ├── geometry.rs    # zones in pixels, which zone a window is in (any OS, unit-tested)
+│   │   ├── config.rs      # reads and writes zones.cfg (any OS, unit-tested)
+│   │   ├── mover.rs       # to zone N, next, previous, other monitor (any OS, unit-tested)
+│   │   ├── desktop.rs     # the Desktop trait each OS implements, and a fake for tests
+│   │   ├── win32.rs       # Windows: SetWindowPos, minus DWM's invisible borders
+│   │   ├── macos.rs       # macOS: the Accessibility API
+│   │   └── x11.rs         # Linux X11: EWMH messages to the window manager, RandR
 │   └── spotlight/         # mouse spotlight (double Ctrl; a shortcut on Wayland)
 │       ├── mod.rs         # shows/hides/animates it, interprets keys (any OS)
 │       ├── detector.rs    # double-tap timing rules (any OS, unit-tested)
@@ -149,6 +158,37 @@ While you type, a list offers what can come next: functions and names where a va
 An error says what's wrong and selects the character at fault: `1/0` gives `Division by zero at position 2`.
 
 The history, the names and the lines entered last until the app exits. On **Wayland**, apps can't register keys like Ctrl+Alt+C, so open the calculator from the tray menu there. If another app already uses Ctrl+Alt+C, the tray menu works too.
+
+### Window zones
+
+Zones divide each monitor into areas that windows snap into. These keys move the window you're working in (**Win** is **Command** on macOS):
+
+| Keys | Does |
+|---|---|
+| **Ctrl+Alt+Win+1** to **9** | moves it into that zone of its monitor |
+| **Ctrl+Alt+Win+Right** / **Left** | moves it to the next or previous zone, around the end; a window in no zone goes to the first or last |
+| **Ctrl+Alt+Win+M** | moves it to the monitor the mouse is on, at the same place there |
+
+The zones are in `zones.cfg`, in your config folder (`%APPDATA%\my-tools` on Windows, `~/Library/Application Support/my-tools` on macOS, `~/.config/my-tools` on Linux). It's made with three columns the first time it's needed, explains itself at the top, and changes apply at the next key press:
+
+```
+Layout = Columns 3          # or Columns 25 50 25, Rows 2, Grid 3 x 2
+Gap = 8                     # pixels between zones and around them
+
+# A monitor's own layout: the lines after a Monitor line (left, top, width, height)
+Monitor = 1920, 0, 2560, 1440
+Zone = 0, 0, 60, 100        # your own zones, in percent: left, top, width, height
+Zone = 60, 0, 40, 100
+```
+
+A line that can't be used is skipped, and the reason, with its line number, goes to stderr (run from a terminal to see it).
+
+| OS | Status |
+|---|---|
+| Windows | Works. Windows only lets programs run as administrator be moved by programs run as administrator. |
+| macOS | The first time, macOS asks you to allow My Tools under **System Settings → Privacy & Security → Accessibility**; press the keys again after. Full-screen windows can't be moved. |
+| Linux, X11 | Works with any window manager that follows EWMH (GNOME, KDE, XFCE, Cinnamon, most others). The work area (without panels) is one for all monitors in EWMH, so a panel on one monitor can shrink the zones of another. |
+| Linux, Wayland | Doesn't work: Wayland doesn't let apps move other apps' windows. The keys aren't registered there. |
 
 ### Mouse spotlight
 

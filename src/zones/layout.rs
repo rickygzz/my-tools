@@ -107,6 +107,7 @@ impl Layouts {
 
 /// A layout the zone editor can start from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(test), expect(dead_code, reason = "the zone editor offers them (step 4)"))]
 pub enum Template {
     Columns2,
     Columns3,
@@ -120,6 +121,7 @@ pub enum Template {
     Grid3x3,
 }
 
+#[cfg_attr(not(test), expect(dead_code, reason = "the zone editor offers them (step 4)"))]
 impl Template {
     pub const ALL: [Template; 9] = [
         Template::Columns2,
@@ -203,6 +205,15 @@ mod tests {
             grid(&equal(2), &equal(2)),
             [Zone::new(0.0, 0.0, 50.0, 50.0), Zone::new(50.0, 0.0, 50.0, 50.0), Zone::new(0.0, 50.0, 50.0, 50.0), Zone::new(50.0, 50.0, 50.0, 50.0)]
         );
+    }
+
+    #[test]
+    fn every_template_fills_the_monitor_once() {
+        for template in Template::ALL {
+            let area: f64 = template.zones().iter().map(|zone| zone.width * zone.height).sum();
+            assert!((area - 100.0 * 100.0).abs() < 1e-6, "{}", template.label());
+            assert!(template.zones().iter().all(|zone| zone.right() <= 100.0 + 1e-9 && zone.bottom() <= 100.0 + 1e-9));
+        }
     }
 
     #[test]

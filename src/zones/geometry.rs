@@ -33,6 +33,7 @@ pub fn place(layout: &Layout, work_area: Rect) -> Vec<Rect> {
 /// the mouse crosses it. When it's in several, the one whose center is nearest, so each of
 /// zones that overlap is the one chosen around its own middle; of those as near, the smallest,
 /// so a zone inside another with the same center can still be chosen.
+#[cfg_attr(not(test), expect(dead_code, reason = "the drag overlay uses it (step 3)"))]
 pub fn zone_at(zones: &[Rect], x: i32, y: i32, gap: i32) -> Option<usize> {
     let reach = gap / 2 + 1;
     let (indexes, found): (Vec<usize>, Vec<[f64; 4]>) = zones
@@ -49,6 +50,7 @@ pub fn zone_at(zones: &[Rect], x: i32, y: i32, gap: i32) -> Option<usize> {
 /// Of zones that a point is in, the one whose center is nearest the point; of those as near,
 /// the smallest. Each zone is `[left, top, width, height]`, in any unit, the point's too.
 /// `None` for no zones.
+#[cfg_attr(not(test), expect(dead_code, reason = "the drag overlay uses it (step 3)"))]
 pub fn nearest(zones: &[[f64; 4]], x: f64, y: f64) -> Option<usize> {
     const SAME: f64 = 1e-9;
     let mut nearest = None;
@@ -85,6 +87,7 @@ pub fn zone_of(zones: &[Rect], window: Rect) -> Option<usize> {
 
 /// The order to draw `count` zones in: as numbered, but `on_top` (such as the one
 /// highlighted) last, so where zones overlap all of it shows.
+#[cfg_attr(not(test), expect(dead_code, reason = "the drag overlay uses it (step 3)"))]
 pub fn drawing_order(count: usize, on_top: Option<usize>) -> Vec<usize> {
     let mut order: Vec<usize> = (0..count).collect();
     if let Some(top) = on_top.filter(|&top| top < count) {

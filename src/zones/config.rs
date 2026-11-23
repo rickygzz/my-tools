@@ -340,6 +340,7 @@ pub fn default_text() -> String {
 /// then the default layout, then each monitor's own after its Monitor line. A Zone line per
 /// zone, in percent rounded to hundredths: each zone's right and bottom are rounded, not its
 /// size, so zones side by side still meet.
+#[cfg_attr(not(test), expect(dead_code, reason = "the zone editor saves with it (step 4)"))]
 pub fn text_of(layouts: &Layouts) -> String {
     let mut text = format!("{HELP}# Saved by the window zones editor.\n\n");
     write_layout(&mut text, &layouts.default);
@@ -351,6 +352,7 @@ pub fn text_of(layouts: &Layouts) -> String {
     text
 }
 
+#[cfg_attr(not(test), expect(dead_code, reason = "the zone editor saves with it (step 4)"))]
 fn write_layout(text: &mut String, layout: &Layout) {
     let round = |number: f64| (number * 100.0).round() / 100.0;
     for zone in &layout.zones {
@@ -411,6 +413,7 @@ pub fn load(path: &Path) -> ConfigResult {
 
 /// Writes the layouts, for the next drag. It writes a file next to it first, then renames it
 /// over the old one, so a crash halfway doesn't leave half a file. `Err` says why it couldn't.
+#[cfg_attr(not(test), expect(dead_code, reason = "the zone editor saves with it (step 4)"))]
 pub fn save(path: &Path, layouts: &Layouts) -> Result<(), String> {
     let write = || {
         if let Some(folder) = path.parent() {

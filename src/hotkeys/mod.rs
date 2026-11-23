@@ -28,17 +28,52 @@ use std::sync::Arc;
 pub enum Action {
     Calculator,
     Spotlight,
+    /// Move the active window to this zone, from 1 to [`ZONE_KEYS`].
+    Zone(u8),
+    NextZone,
+    /// Move the active window to the monitor the mouse pointer is on.
+    WindowToMouse,
+    PreviousZone,
 }
 
+/// How many zones have a shortcut of their own: 1 to 9.
+const ZONE_KEYS: usize = 9;
+
 impl Action {
-    pub const ALL: [Action; 2] = [Action::Calculator, Action::Spotlight];
+    pub const ALL: [Action; 5 + ZONE_KEYS] = [
+        Action::Calculator,
+        Action::Spotlight,
+        Action::NextZone,
+        Action::PreviousZone,
+        Action::WindowToMouse,
+        Action::Zone(1),
+        Action::Zone(2),
+        Action::Zone(3),
+        Action::Zone(4),
+        Action::Zone(5),
+        Action::Zone(6),
+        Action::Zone(7),
+        Action::Zone(8),
+        Action::Zone(9),
+    ];
+
+    /// Whether it moves windows into zones, which Wayland doesn't allow.
+    pub fn is_zone(self) -> bool {
+        matches!(self, Action::Zone(_) | Action::NextZone | Action::PreviousZone | Action::WindowToMouse)
+    }
 
     /// Its name in `--show <name>`, and its ID with the portal (the desktop remembers the
     /// user's keys under it, so don't rename it).
     pub fn id(self) -> &'static str {
+        const ZONES: [&str; ZONE_KEYS] =
+            ["zone-1", "zone-2", "zone-3", "zone-4", "zone-5", "zone-6", "zone-7", "zone-8", "zone-9"];
         match self {
             Action::Calculator => "calculator",
             Action::Spotlight => "spotlight",
+            Action::Zone(number) => ZONES[usize::from(number) - 1],
+            Action::NextZone => "next-zone",
+            Action::PreviousZone => "previous-zone",
+            Action::WindowToMouse => "window-to-mouse",
         }
     }
 
@@ -48,18 +83,51 @@ impl Action {
 
     /// Shown in the desktop's shortcut settings.
     fn description(self) -> &'static str {
+        const ZONES: [&str; ZONE_KEYS] = [
+            "Move the window to zone 1",
+            "Move the window to zone 2",
+            "Move the window to zone 3",
+            "Move the window to zone 4",
+            "Move the window to zone 5",
+            "Move the window to zone 6",
+            "Move the window to zone 7",
+            "Move the window to zone 8",
+            "Move the window to zone 9",
+        ];
         match self {
             Action::Calculator => "Show the calculator",
             Action::Spotlight => "Show the mouse spotlight",
+            Action::Zone(number) => ZONES[usize::from(number) - 1],
+            Action::NextZone => "Move the window to the next zone",
+            Action::PreviousZone => "Move the window to the previous zone",
+            Action::WindowToMouse => "Move the window to the screen the mouse is on",
         }
     }
 
     /// The suggested keys: modifiers, then one key, joined with `+`. On Wayland the user
     /// can pick other keys in the desktop's dialog.
+    ///
+    /// The zones use Ctrl+Alt+Win (Ctrl+Option+Command on macOS): Ctrl+Alt alone is AltGr on
+    /// many keyboards, where AltGr with a digit types a character such as @ or #.
     fn keys(self) -> &'static str {
+        const ZONES: [&str; ZONE_KEYS] = [
+            "Ctrl+Alt+Super+1",
+            "Ctrl+Alt+Super+2",
+            "Ctrl+Alt+Super+3",
+            "Ctrl+Alt+Super+4",
+            "Ctrl+Alt+Super+5",
+            "Ctrl+Alt+Super+6",
+            "Ctrl+Alt+Super+7",
+            "Ctrl+Alt+Super+8",
+            "Ctrl+Alt+Super+9",
+        ];
         match self {
             Action::Calculator => "Ctrl+Alt+C",
             Action::Spotlight => "Ctrl+Alt+P",
+            Action::Zone(number) => ZONES[usize::from(number) - 1],
+            Action::NextZone => "Ctrl+Alt+Super+Right",
+            Action::PreviousZone => "Ctrl+Alt+Super+Left",
+            Action::WindowToMouse => "Ctrl+Alt+Super+M",
         }
     }
 }

@@ -31,7 +31,7 @@ ksni = { version = "0.3.7", default-features = false, features = ["blocking", "a
 # D-Bus calls of our own (GNOME extension setup, notifications). Same version ksni uses.
 zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 # Linux (X11) spotlight: keys via XInput2, click-through via XFixes. winit already uses x11rb.
-x11rb = { version = "0.13", features = ["xinput", "xfixes", "shape"] }
+x11rb = { version = "0.13", features = ["xinput", "xfixes", "shape", "randr"] }
 # Linux (Wayland) spotlight: see-through pixel buffers on winit's own Wayland connection
 # (softbuffer only offers opaque ones there). Same versions winit already uses.
 wayland-client = "0.31"
@@ -41,7 +41,7 @@ rustix = { version = "1", features = ["fs"] }
 
 [target."cfg(windows)".dependencies]
 softbuffer = "0.4"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_LibraryLoader"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse", "Win32_System_LibraryLoader", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm"] }
 
 # macOS spotlight: Rust bindings to Apple's frameworks. Same versions tray-icon/muda already use.
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -50,7 +50,9 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSColor", "NSEvent", "NSGraphics", "NSResponder", "NSScreen", "NSView", "NSWindow", "objc2-quartz-core"] }
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "CAShapeLayer", "CATransaction", "objc2-core-foundation", "objc2-core-graphics"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGAffineTransform", "CGColor", "CGEvent", "CGEventTypes", "CGPath"] }
-objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes", "CFMachPort", "CFRunLoop"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes", "CFMachPort", "CFRunLoop", "CFString", "CFDictionary", "CFNumber"] }
+# macOS window zones: the Accessibility API, which can move other apps' windows.
+objc2-application-services = { version = "0.3", default-features = false, features = ["std", "libc", "HIServices", "AXUIElement", "AXError", "AXValue"] }
 
 [build-dependencies]
 winresource = "0.1.34"

@@ -6,8 +6,9 @@ use super::layout::{Monitor, Rect};
 
 /// The monitors and the windows of every program, in screen pixels.
 pub trait Desktop {
-    /// A window of any program, as the OS names it.
-    type Window: Copy + PartialEq + std::fmt::Debug;
+    /// A window of any program, as the OS names it: a handle on Windows and X11, a reference-
+    /// counted Accessibility object on macOS.
+    type Window: Clone;
 
     /// Every monitor connected now.
     fn monitors(&self) -> Vec<Monitor>;
@@ -33,6 +34,22 @@ pub trait Desktop {
 
     /// Maximizes the window, or gives it back its size from before.
     fn set_maximized(&mut self, window: Self::Window, maximized: bool);
+}
+
+/// The monitor a window is on: the one its middle is in, or the nearest.
+#[cfg_attr(windows, allow(dead_code))]
+pub fn nearest_monitor(monitors: Vec<Monitor>, window: Rect) -> Monitor {
+    let (x, y) = (window.left + window.width / 2, window.top + window.height / 2);
+    let distance = |monitor: &Monitor| {
+        let bounds = monitor.bounds;
+        let dx = i64::from((bounds.left - x).max(x - bounds.right() + 1).max(0));
+        let dy = i64::from((bounds.top - y).max(y - bounds.bottom() + 1).max(0));
+        dx * dx + dy * dy
+    };
+    monitors.into_iter().min_by_key(distance).unwrap_or_else(|| {
+        let bounds = Rect::new(0, 0, 1920, 1080);
+        Monitor { bounds, work_area: bounds }
+    })
 }
 
 #[cfg(test)]

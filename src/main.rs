@@ -6,8 +6,6 @@ mod calculator;
 mod hotkeys;
 mod spotlight;
 mod tray;
-// Not used by the app yet: the OS parts and the hotkeys come in the next steps.
-#[allow(dead_code)]
 mod zones;
 
 use std::time::Instant;
@@ -21,6 +19,7 @@ use calculator::Calculator;
 use hotkeys::Action;
 use spotlight::Spotlight;
 use tray::Tray;
+use zones::Zones;
 
 /// The app's reverse-DNS ID. Linux desktops use it to find the app's `.desktop` file, which
 /// they need to remember its keyboard shortcut and to label its notifications. Keep it in line
@@ -55,6 +54,7 @@ struct App {
     /// The double-Ctrl mouse spotlight.
     spotlight: Spotlight,
     calculator: Calculator,
+    zones: Zones,
 }
 
 impl ApplicationHandler<UserEvent> for App {
@@ -89,6 +89,10 @@ impl ApplicationHandler<UserEvent> for App {
             }
             UserEvent::Show(Action::Calculator, token) => self.calculator.show(event_loop, token),
             UserEvent::Show(Action::Spotlight, token) => self.spotlight.shortcut_pressed(event_loop, token),
+            UserEvent::Show(Action::Zone(number), _) => self.zones.run(zones::Command::MoveTo(number.into())),
+            UserEvent::Show(Action::NextZone, _) => self.zones.run(zones::Command::Next),
+            UserEvent::Show(Action::PreviousZone, _) => self.zones.run(zones::Command::Previous),
+            UserEvent::Show(Action::WindowToMouse, _) => self.zones.run(zones::Command::ToMouse),
             UserEvent::Spotlight(signal) => self.spotlight.handle(event_loop, signal),
         }
     }
@@ -147,10 +151,12 @@ fn main() {
     });
 
     // Keyboard shortcuts in every app; they stay registered while `_hotkeys` lives. The
-    // spotlight only needs one where the double Ctrl tap can't be seen (Wayland).
+    // spotlight only needs one where the double Ctrl tap can't be seen (Wayland), and the
+    // zones only work where apps can move other apps' windows (not Wayland).
     let actions: Vec<Action> = Action::ALL
         .into_iter()
         .filter(|&action| action != Action::Spotlight || spotlight::needs_shortcut())
+        .filter(|&action| !action.is_zone() || !is_wayland())
         .collect();
     let proxy = event_loop.create_proxy();
     let _hotkeys = hotkeys::start(&actions, move |action, token| {
@@ -162,6 +168,7 @@ fn main() {
         tray: None,
         spotlight: Spotlight::default(),
         calculator: Calculator::default(),
+        zones: Zones::default(),
     };
     event_loop.run_app(&mut app).expect("event loop failed");
 }

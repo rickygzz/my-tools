@@ -4,8 +4,9 @@
 //!
 //! - `egui_winit::State` turns winit's events (keys, mouse, resizes) into egui input, and
 //!   carries out egui's output (clipboard, cursor shape, opening links);
-//! - `egui_wgpu::winit::Painter` draws the triangles on the GPU, with wgpu (DirectX or Vulkan
-//!   on Windows, Metal on macOS, Vulkan or OpenGL on Linux);
+//! - [`Renderer`] draws the triangles: on the GPU with wgpu (DirectX or Vulkan on Windows,
+//!   Metal on macOS, Vulkan or OpenGL on Linux), or through OpenGL where wgpu finds no GPU,
+//!   such as in a virtual machine;
 //! - [`view::draw`] is the calculator's own UI, run once per frame.
 //!
 //! **Hiding.** Windows, macOS and X11 hide the window and show it again. Wayland has no way to
@@ -14,13 +15,10 @@
 //! GPU device, egui and the presenter stay, so reopening is quick and nothing is forgotten.
 
 use std::error::Error;
-use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use egui::ViewportId;
-use egui_wgpu::winit::Painter;
-use egui_wgpu::{RendererOptions, WgpuConfiguration, WgpuSetup};
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
@@ -28,16 +26,18 @@ use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use winit::window::{Window as WinitWindow, WindowAttributes, WindowId, WindowLevel};
 
 use super::presenter::Presenter;
+use super::renderer::Renderer;
 use super::view::{self, Action, ViewState};
 
 /// A screen: its top-left corner and size, in physical pixels.
 pub type Screen = (PhysicalPosition<i32>, PhysicalSize<u32>);
 
 pub struct Window {
+    /// Declared before `window`, so its drawing surface goes before the window it draws into.
+    renderer: Renderer,
     /// The OS window; `None` while closed (Wayland's way of hiding it).
     window: Option<Arc<WinitWindow>>,
     egui: egui_winit::State,
-    painter: Painter,
     view: ViewState,
     /// The height last asked for, in points, to ask again only when it changes.
     height: f32,
@@ -47,19 +47,10 @@ pub struct Window {
 
 impl Window {
     pub fn new(event_loop: &ActiveEventLoop, token: Option<String>) -> Result<Self, Box<dyn Error>> {
-        let window = create_window(event_loop, token)?;
-
         let ctx = egui::Context::default();
         ctx.set_visuals(egui::Visuals::dark());
 
-        // wgpu's setup is async (it can wait for the GPU); pollster just waits for it here.
-        let config = WgpuConfiguration {
-            wgpu_setup: WgpuSetup::from_display_handle(event_loop.owned_display_handle()),
-            ..Default::default()
-        };
-        let mut painter =
-            pollster::block_on(Painter::new(ctx.clone(), config, false, RendererOptions::default()));
-        pollster::block_on(painter.set_window(ViewportId::ROOT, Some(window.clone())))?;
+        let (renderer, window) = Renderer::new(event_loop, &ctx, window_attributes(token))?;
 
         let egui = egui_winit::State::new(
             ctx,
@@ -67,13 +58,13 @@ impl Window {
             event_loop,
             Some(window.scale_factor() as f32),
             event_loop.system_theme(),
-            painter.max_texture_side(),
+            renderer.max_texture_side(),
         );
 
         Ok(Self {
+            renderer,
             window: Some(window),
             egui,
-            painter,
             view: ViewState::default(),
             height: view::BASE_HEIGHT,
             repaint_at: None,
@@ -95,8 +86,7 @@ impl Window {
         let window = match &self.window {
             Some(window) => window.clone(),
             None => {
-                let window = create_window(event_loop, token)?;
-                pollster::block_on(self.painter.set_window(ViewportId::ROOT, Some(window.clone())))?;
+                let window = self.renderer.new_window(event_loop, window_attributes(token))?;
                 self.height = view::BASE_HEIGHT;
                 self.window = Some(window.clone());
                 window
@@ -124,7 +114,7 @@ impl Window {
             window.set_visible(false);
         } else {
             // Drop the drawing surface first: it refers to the window.
-            let _ = pollster::block_on(self.painter.set_window(ViewportId::ROOT, None));
+            self.renderer.drop_window();
             self.window = None;
         }
     }
@@ -143,11 +133,7 @@ impl Window {
         }
 
         match event {
-            WindowEvent::Resized(size) => {
-                if let (Some(width), Some(height)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) {
-                    self.painter.on_window_resized(ViewportId::ROOT, width, height);
-                }
-            }
+            WindowEvent::Resized(size) => self.renderer.resized(*size),
             // It goes away when another window is used. Alt+F4 (or the like) hides it too,
             // rather than closing it for good, so it keeps its history.
             WindowEvent::Focused(false) | WindowEvent::CloseRequested => self.hide(),
@@ -178,15 +164,7 @@ impl Window {
 
         self.egui.handle_platform_output(window, std::mem::take(&mut output.platform_output));
         let primitives = ctx.tessellate(std::mem::take(&mut output.shapes), output.pixels_per_point);
-        self.painter.paint_and_update_textures(
-            ViewportId::ROOT,
-            output.pixels_per_point,
-            [0.0, 0.0, 0.0, 1.0],
-            &primitives,
-            &mut output.textures_delta,
-            Vec::new(),
-            window,
-        );
+        self.renderer.paint(window, output.pixels_per_point, &primitives, &mut output.textures_delta);
 
         let delay = output.viewport_output.get(&ViewportId::ROOT).map_or(Duration::MAX, |viewport| viewport.repaint_delay);
         self.repaint_at = if delay.is_zero() {
@@ -218,10 +196,10 @@ impl Window {
     }
 }
 
-/// Makes the (hidden) window. On Wayland, the desktop only lets a new window take the
+/// How the (hidden) window is made. On Wayland, the desktop only lets a new window take the
 /// keyboard focus with an activation token from the key press that asked for it; without one,
 /// GNOME shows "Calculator is ready" instead.
-fn create_window(event_loop: &ActiveEventLoop, token: Option<String>) -> Result<Arc<WinitWindow>, Box<dyn Error>> {
+fn window_attributes(token: Option<String>) -> WindowAttributes {
     #[cfg_attr(not(any(windows, target_os = "linux")), allow(unused_mut))]
     let mut attributes = WindowAttributes::default()
         .with_title("Calculator")
@@ -242,7 +220,7 @@ fn create_window(event_loop: &ActiveEventLoop, token: Option<String>) -> Result<
     }
     #[cfg(not(target_os = "linux"))]
     let _ = token;
-    Ok(Arc::new(event_loop.create_window(attributes)?))
+    attributes
 }
 
 /// Whether the system can hide this window: every one but Wayland.

@@ -8,13 +8,15 @@
 //! | `suggester.rs` | what to offer while typing (places, units, functions, names)    |
 //! | `presenter.rs` | the window's behaviour: history, names, Up/Down, suggestions    |
 //! | `view.rs`      | draws the window with egui, and turns keys into presenter calls |
-//! | `window.rs`    | the winit window egui draws into, through wgpu                  |
+//! | `window.rs`    | the winit window egui draws into                                |
+//! | `renderer.rs`  | draws egui with wgpu, or OpenGL where there's no usable GPU    |
 //!
 //! The window is made the first time it's shown, then hidden and shown again, so the history
 //! and the names given values last until the app exits.
 
 pub mod engine;
 mod presenter;
+mod renderer;
 mod suggester;
 mod view;
 mod window;

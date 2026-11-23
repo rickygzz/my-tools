@@ -11,7 +11,11 @@ dirs = "7"
 egui = { version = "0.37", features = ["default_fonts"] }
 egui-wgpu = { version = "0.37", features = ["winit"] }
 egui-winit = { version = "0.37", default-features = false, features = ["clipboard", "links", "wayland", "x11"] }
+# OpenGL drawing for the calculator where wgpu finds no usable GPU (e.g. a macOS VM).
+egui_glow = { version = "0.37", default-features = false }
 global-hotkey = "0.10.0"
+glutin = "0.32"
+glutin-winit = "0.5"
 iana-time-zone = "0.1.65"
 netdev = { version = "0.48.0", default-features = false, features = ["gateway"] }
 pollster = "1.0.3"

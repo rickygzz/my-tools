@@ -1,7 +1,7 @@
-//! The tray icon and its right-click menu.
+//! The tray icon and its right-click menu: **Calculator** and **Exit**.
 //!
-//! Each backend exposes the same small API: `Tray::start(on_exit)` puts the icon in the
-//! tray, and dropping the `Tray` removes it.
+//! Each backend exposes the same small API: `Tray::start(on_command)` puts the icon in the
+//! tray and calls `on_command` when a menu entry is clicked, and dropping the `Tray` removes it.
 //!
 //! - Windows and macOS use the `tray-icon` crate.
 //! - Linux uses `ksni`, which speaks the StatusNotifierItem D-Bus protocol itself, so no
@@ -17,9 +17,16 @@ mod windows_macos;
 #[cfg(not(target_os = "linux"))]
 pub use windows_macos::Tray;
 
+/// A menu entry that was clicked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Command {
+    Calculator,
+    Exit,
+}
+
 /// Shown when hovering over the icon.
 const TOOLTIP: &str = "My Tools";
-/// The menu's only entry.
+const CALCULATOR_LABEL: &str = "Calculator";
 const EXIT_LABEL: &str = "Exit";
 
 /// Raw 32x32 RGBA pixels of the app icon, generated from `assets/icon.svg` by `icon-gen`

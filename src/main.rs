@@ -2,14 +2,18 @@
 // Debug builds keep the console so `println!` output is visible while developing.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod calculator;
 mod spotlight;
 mod tray;
+
+use std::time::Instant;
 
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::window::WindowId;
 
+use calculator::Calculator;
 use spotlight::Spotlight;
 use tray::Tray;
 
@@ -23,17 +27,20 @@ const APP_ID: &str = "com.example.my-tools";
 enum UserEvent {
     /// "Exit" was clicked in the tray menu.
     Exit,
+    /// "Calculator" was clicked in the tray menu, or Ctrl+Alt+C pressed.
+    ShowCalculator,
     Spotlight(spotlight::Signal),
 }
 
 /// The app's state. winit calls the methods below when things happen.
 struct App {
-    /// Lets the tray menu send `UserEvent::Exit` into the event loop.
+    /// Lets the tray menu send its commands into the event loop.
     proxy: EventLoopProxy<UserEvent>,
     /// Kept alive here so the icon stays in the tray.
     tray: Option<Tray>,
     /// The double-Ctrl mouse spotlight.
     spotlight: Spotlight,
+    calculator: Calculator,
 }
 
 impl ApplicationHandler<UserEvent> for App {
@@ -41,9 +48,14 @@ impl ApplicationHandler<UserEvent> for App {
         // The tray icon must be created after the event loop starts (required on macOS).
         if matches!(cause, StartCause::Init) {
             let proxy = self.proxy.clone();
-            match Tray::start(move || {
-                let _ = proxy.send_event(UserEvent::Exit);
-            }) {
+            let on_command = move |command| {
+                let event = match command {
+                    tray::Command::Calculator => UserEvent::ShowCalculator,
+                    tray::Command::Exit => UserEvent::Exit,
+                };
+                let _ = proxy.send_event(event);
+            };
+            match Tray::start(on_command) {
                 Ok(tray) => self.tray = Some(tray),
                 Err(reason) => {
                     // Without a tray icon there's no Exit menu, so staying open would leave
@@ -61,31 +73,38 @@ impl ApplicationHandler<UserEvent> for App {
                 self.tray.take(); // remove the icon from the tray before quitting
                 event_loop.exit();
             }
+            UserEvent::ShowCalculator => self.calculator.show(event_loop),
             UserEvent::Spotlight(signal) => self.spotlight.handle(event_loop, signal),
         }
     }
 
-    /// Called when there's nothing left to handle. While the spotlight shows, wake up again
-    /// shortly to animate it; otherwise sleep until the next event.
+    /// Called when there's nothing left to handle. Sleep until the next event, or until the
+    /// spotlight's next animation step or the calculator's next frame (a blinking caret).
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        match self.spotlight.tick() {
+        self.calculator.wake(Instant::now());
+        let next = [self.spotlight.tick(), self.calculator.next_wake()].into_iter().flatten().min();
+        match next {
             Some(next) => event_loop.set_control_flow(ControlFlow::WaitUntil(next)),
             None => event_loop.set_control_flow(ControlFlow::Wait),
         }
     }
 
-    /// The only window is the spotlight's overlay.
     fn window_event(&mut self, _event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
-        self.spotlight.window_event(id, &event);
+        if self.calculator.owns(id) {
+            self.calculator.window_event(&event);
+        } else {
+            self.spotlight.window_event(id, &event);
+        }
     }
 
     // winit requires this one, but there's nothing to do here.
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
 
-    /// Close the spotlight's windows while the event loop still exists: on Wayland its pixel
-    /// buffers live on the event loop's connection to the compositor.
+    /// Close the windows while the event loop still exists: on Wayland the spotlight's pixel
+    /// buffers, and the calculator's GPU surface, live on its connection to the compositor.
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         self.spotlight = Spotlight::default();
+        self.calculator.close();
     }
 }
 
@@ -107,10 +126,17 @@ fn main() {
         let _ = proxy.send_event(UserEvent::Spotlight(signal));
     });
 
+    // Ctrl+Alt+C shows the calculator; the keys stay registered while `_hotkey` lives.
+    let proxy = event_loop.create_proxy();
+    let _hotkey = calculator::register_hotkey(move || {
+        let _ = proxy.send_event(UserEvent::ShowCalculator);
+    });
+
     let mut app = App {
         proxy: event_loop.create_proxy(),
         tray: None,
         spotlight: Spotlight::default(),
+        calculator: Calculator::default(),
     };
     event_loop.run_app(&mut app).expect("event loop failed");
 }

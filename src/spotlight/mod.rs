@@ -55,7 +55,7 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
 use detector::DoubleTapDetector;
-pub use platform::start_listener;
+pub use platform::{cursor_position, start_listener};
 use presenter::Presenter;
 
 /// A point on the screen, in physical pixels.

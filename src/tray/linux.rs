@@ -15,7 +15,7 @@ use zbus::blocking::fdo::DBusProxy;
 use zbus::names::BusName;
 use zbus::zvariant::{OwnedValue, Value};
 
-use super::{EXIT_LABEL, ICON_RGBA, TOOLTIP, ICON_SIZE};
+use super::{CALCULATOR_LABEL, Command, EXIT_LABEL, ICON_RGBA, ICON_SIZE, TOOLTIP};
 
 const WATCHER: &str = "org.kde.StatusNotifierWatcher";
 const SHELL_EXTENSIONS: &str = "org.gnome.Shell.Extensions";
@@ -29,11 +29,11 @@ pub struct Tray {
 }
 
 impl Tray {
-    /// Puts the icon in the tray. `on_exit` runs when "Exit" is clicked.
+    /// Puts the icon in the tray. `on_command` runs when a menu entry is clicked.
     ///
     /// If the desktop has no tray, first tries to fix that on GNOME. If that fails, shows a
     /// desktop notification explaining how to fix it by hand, and returns an error.
-    pub fn start(on_exit: impl Fn() + Send + Sync + 'static) -> Result<Tray, String> {
+    pub fn start(on_command: impl Fn(Command) + Send + Sync + 'static) -> Result<Tray, String> {
         let bus = Connection::session().map_err(|e| format!("can't connect to D-Bus: {e}"))?;
 
         if !ensure_host(&bus) {
@@ -43,7 +43,7 @@ impl Tray {
 
         let tray = SniTray {
             icon: argb_icon(),
-            on_exit: Box::new(on_exit),
+            on_command: Box::new(on_command),
         };
         match tray.spawn() {
             Ok(handle) => Ok(Tray { handle }),
@@ -64,7 +64,7 @@ impl Drop for Tray {
 /// What `ksni` publishes on D-Bus.
 struct SniTray {
     icon: ksni::Icon,
-    on_exit: Box<dyn Fn() + Send + Sync>,
+    on_command: Box<dyn Fn(Command) + Send + Sync>,
 }
 
 impl ksni::Tray for SniTray {
@@ -91,8 +91,15 @@ impl ksni::Tray for SniTray {
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         vec![
             ksni::menu::StandardItem {
+                label: CALCULATOR_LABEL.into(),
+                activate: Box::new(|tray: &mut Self| (tray.on_command)(Command::Calculator)),
+                ..Default::default()
+            }
+            .into(),
+            ksni::MenuItem::Separator,
+            ksni::menu::StandardItem {
                 label: EXIT_LABEL.into(),
-                activate: Box::new(|tray: &mut Self| (tray.on_exit)()),
+                activate: Box::new(|tray: &mut Self| (tray.on_command)(Command::Exit)),
                 ..Default::default()
             }
             .into(),

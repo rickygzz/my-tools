@@ -3,10 +3,11 @@
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 
-use super::{CALCULATOR_LABEL, Command, EXIT_LABEL, ICON_RGBA, ICON_SIZE, TOOLTIP};
+use super::{CALCULATOR_LABEL, Command, EXIT_LABEL, ICON_RGBA, ICON_SIZE, TOOLTIP, ZONES_LABEL};
 
 /// IDs of the menu items, used to recognise them when they're clicked.
 const CALCULATOR_ID: &str = "calculator";
+const ZONES_ID: &str = "zones";
 const EXIT_ID: &str = "exit";
 
 /// The icon in the tray. Dropping it removes the icon.
@@ -20,14 +21,16 @@ impl Tray {
     pub fn start(on_command: impl Fn(Command) + Send + Sync + 'static) -> Result<Tray, String> {
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| match event.id.0.as_str() {
             CALCULATOR_ID => on_command(Command::Calculator),
+            ZONES_ID => on_command(Command::EditZones),
             EXIT_ID => on_command(Command::Exit),
             _ => {}
         }));
 
         let menu = Menu::new();
         let calculator_item = MenuItem::with_id(CALCULATOR_ID, CALCULATOR_LABEL, true, None);
+        let zones_item = MenuItem::with_id(ZONES_ID, ZONES_LABEL, true, None);
         let exit_item = MenuItem::with_id(EXIT_ID, EXIT_LABEL, true, None);
-        menu.append_items(&[&calculator_item, &PredefinedMenuItem::separator(), &exit_item])
+        menu.append_items(&[&calculator_item, &zones_item, &PredefinedMenuItem::separator(), &exit_item])
             .map_err(|e| format!("can't build the tray menu: {e}"))?;
 
         let icon = Icon::from_rgba(ICON_RGBA.to_vec(), ICON_SIZE, ICON_SIZE)

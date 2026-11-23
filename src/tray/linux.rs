@@ -15,7 +15,7 @@ use zbus::blocking::fdo::DBusProxy;
 use zbus::names::BusName;
 use zbus::zvariant::{OwnedValue, Value};
 
-use super::{CALCULATOR_LABEL, Command, EXIT_LABEL, ICON_RGBA, ICON_SIZE, TOOLTIP};
+use super::{CALCULATOR_LABEL, Command, EXIT_LABEL, ICON_RGBA, ICON_SIZE, TOOLTIP, ZONES_LABEL};
 
 const WATCHER: &str = "org.kde.StatusNotifierWatcher";
 const SHELL_EXTENSIONS: &str = "org.gnome.Shell.Extensions";
@@ -93,6 +93,12 @@ impl ksni::Tray for SniTray {
             ksni::menu::StandardItem {
                 label: CALCULATOR_LABEL.into(),
                 activate: Box::new(|tray: &mut Self| (tray.on_command)(Command::Calculator)),
+                ..Default::default()
+            }
+            .into(),
+            ksni::menu::StandardItem {
+                label: ZONES_LABEL.into(),
+                activate: Box::new(|tray: &mut Self| (tray.on_command)(Command::EditZones)),
                 ..Default::default()
             }
             .into(),

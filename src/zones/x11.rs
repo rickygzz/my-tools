@@ -204,3 +204,8 @@ fn intersection(one: Rect, other: Rect) -> Option<Rect> {
     let (right, bottom) = (one.right().min(other.right()), one.bottom().min(other.bottom()));
     (left < right && top < bottom).then(|| Rect::from_edges(left, top, right, bottom))
 }
+
+/// Every monitor connected now, for the zone editor.
+pub fn monitors() -> Vec<Monitor> {
+    SystemDesktop::new().map(|desktop| desktop.monitors()).unwrap_or_default()
+}

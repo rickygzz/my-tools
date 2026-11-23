@@ -107,7 +107,6 @@ impl Layouts {
 
 /// A layout the zone editor can start from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(test), expect(dead_code, reason = "the zone editor offers them (step 4)"))]
 pub enum Template {
     Columns2,
     Columns3,
@@ -121,7 +120,6 @@ pub enum Template {
     Grid3x3,
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "the zone editor offers them (step 4)"))]
 impl Template {
     pub const ALL: [Template; 9] = [
         Template::Columns2,

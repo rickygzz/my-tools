@@ -1,4 +1,4 @@
-//! The tray icon and its right-click menu: **Calculator** and **Exit**.
+//! The tray icon and its right-click menu: **Calculator**, **Edit window zones...** and **Exit**.
 //!
 //! Each backend exposes the same small API: `Tray::start(on_command)` puts the icon in the
 //! tray and calls `on_command` when a menu entry is clicked, and dropping the `Tray` removes it.
@@ -21,12 +21,14 @@ pub use windows_macos::Tray;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     Calculator,
+    EditZones,
     Exit,
 }
 
 /// Shown when hovering over the icon.
 const TOOLTIP: &str = "My Tools";
 const CALCULATOR_LABEL: &str = "Calculator";
+const ZONES_LABEL: &str = "Edit window zones...";
 const EXIT_LABEL: &str = "Exit";
 
 /// Raw 32x32 RGBA pixels of the app icon, generated from `assets/icon.svg` by `icon-gen`

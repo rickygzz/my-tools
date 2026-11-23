@@ -2,7 +2,7 @@
 
 A small cross-platform system tray app written in Rust. It runs on **Windows**, **macOS** and **Linux**.
 
-When it starts, it puts an icon in the system tray (the menu bar on macOS). Right-click the icon to open a menu with **Calculator** and **Exit**.
+When it starts, it puts an icon in the system tray (the menu bar on macOS). Right-click the icon to open a menu with **Calculator**, **Edit window zones...** and **Exit**.
 
 ## Project layout
 
@@ -13,7 +13,7 @@ When it starts, it puts an icon in the system tray (the menu bar on macOS). Righ
 ├── build.rs               # embeds the icon into the Windows .exe
 ├── src/
 │   ├── main.rs            # event loop: starts the tray, spotlight and calculator
-│   ├── tray/              # tray icon and its menu (Calculator, Exit)
+│   ├── tray/              # tray icon and its menu (Calculator, Edit window zones, Exit)
 │   │   ├── mod.rs         # shared tooltip, label and icon pixels
 │   │   ├── windows_macos.rs # Windows, macOS: tray-icon crate
 │   │   └── linux.rs       # Linux: ksni over D-Bus, GNOME extension setup
@@ -39,7 +39,8 @@ When it starts, it puts an icon in the system tray (the menu bar on macOS). Righ
 │   │   ├── macos.rs       # macOS: the Accessibility API
 │   │   ├── macos_drag.rs  # macOS: global mouse monitors, a layer-backed window per screen
 │   │   ├── x11.rs         # Linux X11: EWMH messages to the window manager, RandR
-│   │   └── x11_drag.rs    # Linux X11: XInput2 raw mouse events, ARGB overlay window
+│   │   ├── x11_drag.rs    # Linux X11: XInput2 raw mouse events, ARGB overlay window
+│   │   └── editor/        # the zone editor window (tray menu): presenter (unit-tested), egui view
 │   └── spotlight/         # mouse spotlight (double Ctrl; a shortcut on Wayland)
 │       ├── mod.rs         # shows/hides/animates it, interprets keys (any OS)
 │       ├── detector.rs    # double-tap timing rules (any OS, unit-tested)
@@ -132,7 +133,7 @@ It only type-checks the other OSes' code (nothing is built or run for them), so 
 
 1. Start the app. An orange wrench icon shows up in the tray.
 2. **Right-click** the icon to open the menu.
-3. Click **Calculator** to open the calculator, or **Exit** to close the app.
+3. Click **Calculator** to open the calculator, **Edit window zones...** to change the zones, or **Exit** to close the app.
 
 ### Calculator
 
@@ -177,6 +178,21 @@ These keys move the window you're working in (**Win** is **Command** on macOS):
 | **Ctrl+Alt+Win+1** to **9** | moves it into that zone of its monitor |
 | **Ctrl+Alt+Win+Right** / **Left** | moves it to the next or previous zone, around the end; a window in no zone goes to the first or last |
 | **Ctrl+Alt+Win+M** | moves it to the monitor the mouse is on, at the same place there |
+
+**The window zones editor:** right-click the tray icon and choose **Edit window zones...**. It shows a monitor at its real shape, with its zones over it, numbered, gaps included.
+
+| To | Do this |
+|---|---|
+| Resize zones | Drag a border. Every border on the same line moves with it, so a grid stays a grid. A zone can't get smaller than 5% of the screen. |
+| Resize one zone | Click it to select it, then drag one of the white handles at its corners and the middles of its sides. Only that zone changes, so it can go over the ones next to it. |
+| Move a zone | Drag inside it. |
+| Add a zone | Drag on an empty part of the monitor. |
+| Split or delete a zone | Right-click it. A split goes where you clicked; near an edge, in the middle. **Delete** also deletes the selected zone. |
+| Start over | **Layout**: columns, rows, a wide center or a grid. |
+| Change the gap | **Gap**, in pixels of the screen. |
+| Give a monitor its own zones | **Edit layout of**: pick the monitor. It shows the default layout until your first change, which gives it its own; **Use default layout** drops it. |
+
+Borders and moved zones snap to the edges of the screen and of the other zones. **Undo** (Ctrl+Z) and **Redo** (Ctrl+Y) cover every change, in every layout. Nothing is used until you **Save** (Ctrl+S); the title shows `*` while there are unsaved changes, and closing asks what to do with them. **Edit as text...** opens `zones.cfg` in your text editor instead.
 
 The zones are in `zones.cfg`, in your config folder (`%APPDATA%\my-tools` on Windows, `~/Library/Application Support/my-tools` on macOS, `~/.config/my-tools` on Linux). It's made with three columns the first time it's needed, explains itself at the top, and changes apply at the next key press:
 

@@ -103,18 +103,7 @@ impl Desktop for SystemDesktop {
     type Window = CFRetained<AXUIElement>;
 
     fn monitors(&self) -> Vec<Monitor> {
-        let screens = NSScreen::screens(self.mtm);
-        // The first screen is the main one, whose bottom left corner is AppKit's (0, 0).
-        let Some(main_height) = screens.iter().next().map(|main| main.frame().size.height) else {
-            return Vec::new();
-        };
-        screens
-            .iter()
-            .map(|screen| Monitor {
-                bounds: turned_over(screen.frame(), main_height),
-                work_area: turned_over(screen.visibleFrame(), main_height),
-            })
-            .collect()
+        screens(self.mtm)
     }
 
     fn monitor_of(&self, window: Self::Window) -> Monitor {
@@ -195,4 +184,24 @@ pub(super) fn window_at(x: f64, y: f64) -> Option<CFRetained<AXUIElement>> {
 pub(super) fn pointer() -> (f64, f64) {
     let location = CGEvent::new(None).map_or(CGPoint::default(), |event| CGEvent::location(Some(&event)));
     (location.x, location.y)
+}
+
+/// Every monitor connected now, for the zone editor (which needs no permission).
+pub fn monitors() -> Vec<Monitor> {
+    MainThreadMarker::new().map(screens).unwrap_or_default()
+}
+
+fn screens(mtm: MainThreadMarker) -> Vec<Monitor> {
+    let screens = NSScreen::screens(mtm);
+    // The first screen is the main one, whose bottom left corner is AppKit's (0, 0).
+    let Some(main_height) = screens.iter().next().map(|main| main.frame().size.height) else {
+        return Vec::new();
+    };
+    screens
+        .iter()
+        .map(|screen| Monitor {
+            bounds: turned_over(screen.frame(), main_height),
+            work_area: turned_over(screen.visibleFrame(), main_height),
+        })
+        .collect()
 }

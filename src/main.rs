@@ -39,6 +39,8 @@ fn is_wayland() -> bool {
 enum UserEvent {
     /// "Exit" was clicked in the tray menu.
     Exit,
+    /// "Edit window zones..." was clicked in the tray menu.
+    EditZones,
     /// A keyboard shortcut was pressed, or "Calculator" clicked in the tray menu. The token
     /// (Wayland) lets a new window take the keyboard focus.
     Show(Action, Option<String>),
@@ -67,6 +69,7 @@ impl ApplicationHandler<UserEvent> for App {
             let on_command = move |command| {
                 let event = match command {
                     tray::Command::Calculator => UserEvent::Show(Action::Calculator, None),
+                    tray::Command::EditZones => UserEvent::EditZones,
                     tray::Command::Exit => UserEvent::Exit,
                 };
                 let _ = proxy.send_event(event);
@@ -104,14 +107,17 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::Show(Action::WindowToMouse, _) => self.zones.run(zones::Command::ToMouse),
             UserEvent::Spotlight(signal) => self.spotlight.handle(event_loop, signal),
             UserEvent::Drag(signal) => self.zones.drag(event_loop, signal),
+            UserEvent::EditZones => self.zones.edit(event_loop),
         }
     }
 
     /// Called when there's nothing left to handle. Sleep until the next event, or until the
     /// spotlight's next animation step or the calculator's next frame (a blinking caret).
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        self.calculator.wake(Instant::now());
-        let next = [self.spotlight.tick(), self.calculator.next_wake()].into_iter().flatten().min();
+        let now = Instant::now();
+        self.calculator.wake(now);
+        self.zones.wake(now);
+        let next = [self.spotlight.tick(), self.calculator.next_wake(), self.zones.next_wake()].into_iter().flatten().min();
         match next {
             Some(next) => event_loop.set_control_flow(ControlFlow::WaitUntil(next)),
             None => event_loop.set_control_flow(ControlFlow::Wait),
@@ -122,7 +128,7 @@ impl ApplicationHandler<UserEvent> for App {
         if self.calculator.owns(id) {
             self.calculator.window_event(&event);
         } else if self.zones.owns(id) {
-            self.zones.window_event(&event);
+            self.zones.window_event(id, &event);
         } else {
             self.spotlight.window_event(id, &event);
         }

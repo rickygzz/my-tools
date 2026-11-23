@@ -20,6 +20,7 @@
 pub mod config;
 pub mod desktop;
 pub mod drag;
+mod editor;
 pub mod geometry;
 pub mod layout;
 pub mod mover;
@@ -44,6 +45,8 @@ use {macos as system, macos_drag as system_drag};
 use {win32 as system, win32_drag as system_drag};
 #[cfg(target_os = "linux")]
 use {x11 as system, x11_drag as system_drag};
+
+use std::time::Instant;
 
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
@@ -80,6 +83,8 @@ pub struct Zones {
     drag: DragPresenter,
     /// Made at the first drag; `None` until then, or when it can't be made.
     overlay: Option<system_drag::Overlay>,
+    /// The zone editor, while it's open.
+    editor: Option<editor::Editor>,
 }
 
 impl Zones {
@@ -117,7 +122,7 @@ impl Zones {
             Signal::Started(window) => self.drag.started(window, overlay),
             Signal::Moved(pointer) => self.drag.moved(pointer, overlay, || {
                 let layouts = layouts(reported);
-                let monitors = system::SystemDesktop::new().map(|desktop| desktop.monitors()).unwrap_or_default();
+                let monitors = system::monitors();
                 drag::zones_of(&monitors, &layouts)
             }),
             Signal::Ended => {
@@ -132,19 +137,50 @@ impl Zones {
         }
     }
 
-    pub fn owns(&self, id: WindowId) -> bool {
-        self.overlay.as_ref().is_some_and(|overlay| overlay.owns(id))
+    /// Opens the zone editor, or brings it to the front if it's open.
+    pub fn edit(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(editor) = &self.editor {
+            editor.focus();
+            return;
+        }
+        match editor::Editor::open(event_loop, system::monitors()) {
+            Ok(editor) => self.editor = Some(editor),
+            Err(error) => report(&format!("Could not open the window zones editor: {error}")),
+        }
     }
 
-    pub fn window_event(&mut self, event: &WindowEvent) {
-        if let Some(overlay) = &mut self.overlay {
+    pub fn owns(&self, id: WindowId) -> bool {
+        self.overlay.as_ref().is_some_and(|overlay| overlay.owns(id))
+            || self.editor.as_ref().is_some_and(|editor| editor.id() == id)
+    }
+
+    pub fn window_event(&mut self, id: WindowId, event: &WindowEvent) {
+        if let Some(editor) = &mut self.editor
+            && editor.id() == id
+        {
+            if !editor.window_event(event) {
+                self.editor = None;
+            }
+        } else if let Some(overlay) = &mut self.overlay {
             overlay.window_event(event);
         }
     }
 
-    /// Closes the overlay while the event loop still exists.
+    /// When the editor wants to be drawn again (a blinking caret), if it does.
+    pub fn next_wake(&self) -> Option<Instant> {
+        self.editor.as_ref().and_then(editor::Editor::next_wake)
+    }
+
+    pub fn wake(&mut self, now: Instant) {
+        if let Some(editor) = &mut self.editor {
+            editor.wake(now);
+        }
+    }
+
+    /// Closes the windows while the event loop still exists.
     pub fn close(&mut self) {
         self.overlay = None;
+        self.editor = None;
     }
 }
 

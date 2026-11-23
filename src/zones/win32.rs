@@ -179,6 +179,11 @@ fn set_visible_bounds(window: HWND, bounds: Rect) -> Result<(), u32> {
     if moved == 0 { Err(unsafe { GetLastError() }) } else { Ok(()) }
 }
 
+/// Every monitor connected now, for the zone editor.
+pub fn monitors() -> Vec<Monitor> {
+    SystemDesktop.monitors()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

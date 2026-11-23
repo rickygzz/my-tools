@@ -350,9 +350,8 @@ fn draw_suggestions(ui: &mut Ui, presenter: &mut Presenter) {
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing.y = 0.0;
                         for (index, text) in texts.iter().enumerate() {
-                            // The empty text on the right pushes the suggestion to the left.
-                            let row = egui::Button::selectable(chosen == Some(index), colored(text, RESULT_COLOR, 15.0))
-                                .right_text("")
+                            // The space that grows after the text pushes it to the left.
+                            let row = egui::Button::selectable(chosen == Some(index), (colored(text, RESULT_COLOR, 15.0), egui::Atom::grow()))
                                 .frame_when_inactive(false)
                                 .min_size(vec2(ui.available_width(), SUGGESTION_HEIGHT));
                             let row = ui.add(row);
@@ -381,4 +380,276 @@ fn format(color: Color32, size: f32) -> TextFormat {
 
 fn colored(text: &str, color: Color32, size: f32) -> egui::RichText {
     egui::RichText::new(text).color(color).font(FontId::monospace(size))
+}
+
+/// The window driven by simulated keys and clicks, without a screen: `egui_kittest` runs the
+/// frames and gives each one the input, as the real window does.
+#[cfg(test)]
+mod tests {
+    use chrono::{DateTime, TimeZone, Utc};
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+
+    use super::*;
+    use crate::calculator::engine::testing::{FixedClock, calculator_at};
+
+    /// What the window keeps: the presenter, the view's own state, and the actions asked of
+    /// the window so far.
+    struct Window {
+        presenter: Presenter,
+        view: ViewState,
+        actions: Vec<Action>,
+    }
+
+    /// In winter, so Mexico City is UTC-6.
+    fn winter() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 1, 15, 12, 0, 0).unwrap()
+    }
+
+    fn window() -> Harness<'static, Window> {
+        let calculator = calculator_at(FixedClock::at(2026, 1, 15, 16, 0, "America/Mexico_City"));
+        let state = Window {
+            presenter: Presenter::new(calculator, winter),
+            view: ViewState::default(),
+            actions: Vec::new(),
+        };
+        let mut harness = Harness::builder().with_size(vec2(WIDTH, 450.0)).build_ui_state(
+            |ui, window: &mut Window| {
+                let actions = draw(ui, &mut window.presenter, &mut window.view);
+                window.actions.extend(actions);
+            },
+            state,
+        );
+        harness.step();
+        harness
+    }
+
+    fn type_text(harness: &mut Harness<'_, Window>, text: &str) {
+        harness.event(Event::Text(text.to_string()));
+        harness.step();
+    }
+
+    fn press(harness: &mut Harness<'_, Window>, key: Key) {
+        press_with(harness, Modifiers::NONE, key);
+    }
+
+    fn press_with(harness: &mut Harness<'_, Window>, modifiers: Modifiers, key: Key) {
+        // A real Ctrl press outside macOS also sets `command`, which egui reads for Ctrl+A.
+        let command = modifiers.command || (modifiers.ctrl && !cfg!(target_os = "macos"));
+        harness.key_press_modifiers(Modifiers { command, ..modifiers }, key);
+        harness.step();
+    }
+
+    fn line<'a>(harness: &'a Harness<'_, Window>) -> &'a str {
+        &harness.state().presenter.expression
+    }
+
+    /// The part of the line selected, as (start, end) in characters.
+    fn selected(harness: &Harness<'_, Window>) -> Option<(usize, usize)> {
+        let state = TextEditState::load(&harness.ctx, input_id())?;
+        let range = state.cursor.char_range()?;
+        let (start, end) = (range.primary.index.0, range.secondary.index.0);
+        Some((start.min(end), start.max(end)))
+    }
+
+    fn copied(harness: &Harness<'_, Window>) -> Option<String> {
+        harness.output().platform_output.commands.iter().find_map(|command| match command {
+            egui::OutputCommand::CopyText(text) => Some(text.clone()),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn typing_then_enter_shows_the_result_and_keeps_the_line() {
+        let mut harness = window();
+        type_text(&mut harness, "2+2*3");
+        press(&mut harness, Key::Enter);
+
+        assert_eq!(harness.state().presenter.output(), &Output::Result("8".into()));
+        assert_eq!(line(&harness), "2+2*3");
+    }
+
+    #[test]
+    fn an_error_selects_the_character_at_fault() {
+        let mut harness = window();
+        type_text(&mut harness, "1/0");
+        press(&mut harness, Key::Enter);
+
+        let error = Output::Error("Division by zero at position 2".into());
+        assert_eq!(harness.state().presenter.output(), &error);
+        assert_eq!(selected(&harness), Some((1, 2)));
+    }
+
+    #[test]
+    fn when_shown_the_whole_line_is_selected_so_typing_replaces_it() {
+        let mut harness = window();
+        type_text(&mut harness, "old line");
+        harness.state_mut().view.just_shown = true;
+        harness.step();
+        assert_eq!(selected(&harness), Some((0, 8)));
+
+        type_text(&mut harness, "7");
+        assert_eq!(line(&harness), "7");
+    }
+
+    #[test]
+    fn tab_writes_the_first_suggestion_and_the_list_goes_on() {
+        let mut harness = window();
+        type_text(&mut harness, "10 k");
+        press(&mut harness, Key::Tab);
+
+        assert_eq!(line(&harness), "10 km to ");
+        assert_eq!(selected(&harness), Some((9, 9)), "the caret goes after what was written");
+        let next = harness.state().presenter.suggestions().expect("the units to convert to");
+        assert!(next.items.iter().all(|item| item.text.ends_with("length)")));
+    }
+
+    #[test]
+    fn down_goes_through_the_list_and_enter_writes_the_one_chosen() {
+        let mut harness = window();
+        type_text(&mut harness, "3 ");
+        press(&mut harness, Key::ArrowDown);
+        press(&mut harness, Key::ArrowDown);
+        press(&mut harness, Key::Enter);
+
+        assert_eq!(line(&harness), "3 um to ");
+        assert_eq!(harness.state().presenter.output(), &Output::Nothing, "Enter chose; it didn't calculate");
+    }
+
+    #[test]
+    fn enter_with_nothing_chosen_in_the_list_calculates() {
+        let mut harness = window();
+        type_text(&mut harness, "10 ");
+        assert!(harness.state().presenter.suggestions().is_some());
+        press(&mut harness, Key::Enter);
+
+        assert_eq!(harness.state().presenter.output(), &Output::Result("10".into()));
+        assert!(harness.state().presenter.suggestions().is_none());
+    }
+
+    #[test]
+    fn clicking_a_suggestion_writes_it() {
+        let mut harness = window();
+        type_text(&mut harness, "10:30 ind");
+        harness.step(); // a new list is measured, unseen, on its first frame
+        harness.get_by_label("India (UTC+5:30)").click();
+        harness.step();
+
+        assert_eq!(line(&harness), "10:30 India to ");
+    }
+
+    #[test]
+    fn esc_first_closes_the_list_then_hides_the_window() {
+        let mut harness = window();
+        type_text(&mut harness, "10 ");
+        press(&mut harness, Key::Escape);
+        assert!(harness.state().presenter.suggestions().is_none());
+        assert!(harness.state().actions.is_empty());
+
+        press(&mut harness, Key::Escape);
+        assert_eq!(harness.state().actions, [Action::Hide]);
+    }
+
+    #[test]
+    fn up_brings_back_the_line_before_and_down_the_one_being_typed() {
+        let mut harness = window();
+        type_text(&mut harness, "1+1");
+        press(&mut harness, Key::Enter);
+        press_with(&mut harness, Modifiers::CTRL, Key::A);
+        type_text(&mut harness, "draft");
+
+        press(&mut harness, Key::ArrowUp);
+        assert_eq!(line(&harness), "1+1");
+        assert_eq!(selected(&harness), Some((3, 3)));
+
+        press(&mut harness, Key::ArrowDown);
+        assert_eq!(line(&harness), "draft");
+    }
+
+    #[test]
+    fn ctrl_c_with_nothing_selected_copies_the_result_and_says_so() {
+        let mut harness = window();
+        type_text(&mut harness, "6*7");
+        press(&mut harness, Key::Enter);
+        harness.event(Event::Copy);
+        harness.step();
+
+        assert_eq!(copied(&harness).as_deref(), Some("42"));
+        assert!(harness.state().view.copied_until.is_some(), "it says Copied");
+    }
+
+    #[test]
+    fn ctrl_c_with_text_selected_copies_that_text() {
+        let mut harness = window();
+        type_text(&mut harness, "6*7");
+        press(&mut harness, Key::Enter);
+        press_with(&mut harness, Modifiers::CTRL, Key::A);
+        harness.event(Event::Copy);
+        harness.step();
+
+        assert_eq!(copied(&harness).as_deref(), Some("6*7"));
+    }
+
+    #[test]
+    fn ctrl_c_after_an_error_copies_nothing() {
+        let mut harness = window();
+        type_text(&mut harness, "1 +");
+        press(&mut harness, Key::Enter);
+        harness.event(Event::Copy);
+        harness.step();
+
+        assert_eq!(copied(&harness), None);
+    }
+
+    #[test]
+    fn ctrl_h_and_the_arrow_button_show_and_hide_the_history() {
+        let mut harness = window();
+        type_text(&mut harness, "2+3");
+        press(&mut harness, Key::Enter);
+
+        press_with(&mut harness, Modifiers::CTRL, Key::H);
+        assert!(harness.state().presenter.history_shown());
+        assert!(harness.query_by_label("2+3 = 5").is_some());
+
+        harness.get_by_label("Hide history (Ctrl+H)").click();
+        harness.step();
+        assert!(!harness.state().presenter.history_shown());
+    }
+
+    #[test]
+    fn ctrl_arrows_move_the_window_and_shift_moves_it_further() {
+        let mut harness = window();
+        press_with(&mut harness, Modifiers::CTRL, Key::ArrowLeft);
+        press_with(&mut harness, Modifiers::CTRL | Modifiers::SHIFT, Key::ArrowDown);
+
+        assert_eq!(
+            harness.state().actions,
+            [Action::MoveBy(vec2(-MOVE_STEP, 0.0)), Action::MoveBy(vec2(0.0, BIG_MOVE_STEP))]
+        );
+        assert_eq!(line(&harness), "", "the keys didn't reach the line");
+    }
+
+    #[test]
+    fn every_control_has_a_name_for_screen_readers() {
+        let mut harness = window();
+        press_with(&mut harness, Modifiers::CTRL, Key::H);
+        type_text(&mut harness, "10 ");
+        harness.step(); // the list shows from its second frame
+
+        harness.check_accessibility();
+    }
+
+    #[test]
+    fn the_window_grows_for_the_history_and_the_suggestions() {
+        let mut harness = window();
+        assert_eq!(height(&harness.state().presenter), BASE_HEIGHT);
+
+        type_text(&mut harness, "10 ");
+        let with_list = height(&harness.state().presenter);
+        assert_eq!(with_list, suggestions_top() + list_height(MAX_SUGGESTION_ROWS) + PADDING);
+
+        press(&mut harness, Key::Escape);
+        press_with(&mut harness, Modifiers::CTRL, Key::H);
+        assert!(height(&harness.state().presenter) > with_list);
+    }
 }

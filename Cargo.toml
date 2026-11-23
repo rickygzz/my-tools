@@ -56,3 +56,6 @@ winresource = "0.1.34"
 # The app plus its helper tool (`cargo xtask ...`), sharing one Cargo.lock and target folder.
 [workspace]
 members = ["xtask"]
+
+[dev-dependencies]
+egui_kittest = "0.37"

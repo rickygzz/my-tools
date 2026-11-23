@@ -352,7 +352,8 @@ fn draw_suggestions(ui: &mut Ui, presenter: &mut Presenter) {
                         for (index, text) in texts.iter().enumerate() {
                             // The space that grows after the text pushes it to the left.
                             let row = egui::Button::selectable(chosen == Some(index), (colored(text, RESULT_COLOR, 15.0), egui::Atom::grow()))
-                                .frame_when_inactive(false)
+                                // Only the chosen row (and the one under the mouse) has a frame, which shows it.
+                                .frame_when_inactive(chosen == Some(index))
                                 .min_size(vec2(ui.available_width(), SUGGESTION_HEIGHT));
                             let row = ui.add(row);
                             if chosen == Some(index) {

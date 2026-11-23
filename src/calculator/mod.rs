@@ -55,13 +55,15 @@ impl Calculator {
             }
         }
         self.presenter.shown();
-        if let Some(window) = &mut self.window {
-            window.show(screen_under_cursor(event_loop));
+        if let Some(window) = &mut self.window
+            && let Err(error) = window.show(event_loop, screen_under_cursor(event_loop))
+        {
+            eprintln!("calculator: could not open its window again: {error}");
         }
     }
 
     pub fn owns(&self, id: WindowId) -> bool {
-        self.window.as_ref().is_some_and(|window| window.id() == id)
+        self.window.as_ref().is_some_and(|window| window.id() == Some(id))
     }
 
     pub fn window_event(&mut self, event: &WindowEvent) {

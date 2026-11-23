@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod calculator;
+mod hotkeys;
 mod spotlight;
 mod tray;
 
@@ -14,6 +15,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy}
 use winit::window::WindowId;
 
 use calculator::Calculator;
+use hotkeys::Action;
 use spotlight::Spotlight;
 use tray::Tray;
 
@@ -23,12 +25,21 @@ use tray::Tray;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 const APP_ID: &str = "com.example.my-tools";
 
+/// Whether this is a Linux Wayland session (even if X11 apps can still run in it). Wayland
+/// doesn't let apps see other apps' keys, so shortcuts and the spotlight work differently.
+fn is_wayland() -> bool {
+    cfg!(target_os = "linux")
+        && (std::env::var_os("WAYLAND_DISPLAY").is_some()
+            || std::env::var("XDG_SESSION_TYPE").is_ok_and(|session| session == "wayland"))
+}
+
 /// Events we send into the event loop from other parts of the program.
 enum UserEvent {
     /// "Exit" was clicked in the tray menu.
     Exit,
-    /// "Calculator" was clicked in the tray menu, or Ctrl+Alt+C pressed.
-    ShowCalculator,
+    /// A keyboard shortcut was pressed, or "Calculator" clicked in the tray menu. The token
+    /// (Wayland) lets a new window take the keyboard focus.
+    Show(Action, Option<String>),
     Spotlight(spotlight::Signal),
 }
 
@@ -50,7 +61,7 @@ impl ApplicationHandler<UserEvent> for App {
             let proxy = self.proxy.clone();
             let on_command = move |command| {
                 let event = match command {
-                    tray::Command::Calculator => UserEvent::ShowCalculator,
+                    tray::Command::Calculator => UserEvent::Show(Action::Calculator, None),
                     tray::Command::Exit => UserEvent::Exit,
                 };
                 let _ = proxy.send_event(event);
@@ -73,7 +84,8 @@ impl ApplicationHandler<UserEvent> for App {
                 self.tray.take(); // remove the icon from the tray before quitting
                 event_loop.exit();
             }
-            UserEvent::ShowCalculator => self.calculator.show(event_loop),
+            UserEvent::Show(Action::Calculator, token) => self.calculator.show(event_loop, token),
+            UserEvent::Show(Action::Spotlight, token) => self.spotlight.shortcut_pressed(event_loop, token),
             UserEvent::Spotlight(signal) => self.spotlight.handle(event_loop, signal),
         }
     }
@@ -109,6 +121,11 @@ impl ApplicationHandler<UserEvent> for App {
 }
 
 fn main() {
+    // `my-tools --show calculator` asks the running copy, then exits.
+    if let Some(code) = hotkeys::run_command_line() {
+        std::process::exit(code);
+    }
+
     let mut builder = EventLoop::<UserEvent>::with_user_event();
 
     // On macOS, run as a menu-bar-only app (no Dock icon).
@@ -126,10 +143,15 @@ fn main() {
         let _ = proxy.send_event(UserEvent::Spotlight(signal));
     });
 
-    // Ctrl+Alt+C shows the calculator; the keys stay registered while `_hotkey` lives.
+    // Keyboard shortcuts in every app; they stay registered while `_hotkeys` lives. The
+    // spotlight only needs one where the double Ctrl tap can't be seen (Wayland).
+    let actions: Vec<Action> = Action::ALL
+        .into_iter()
+        .filter(|&action| action != Action::Spotlight || spotlight::needs_shortcut())
+        .collect();
     let proxy = event_loop.create_proxy();
-    let _hotkey = calculator::register_hotkey(move || {
-        let _ = proxy.send_event(UserEvent::ShowCalculator);
+    let _hotkeys = hotkeys::start(&actions, move |action, token| {
+        let _ = proxy.send_event(UserEvent::Show(action, token));
     });
 
     let mut app = App {

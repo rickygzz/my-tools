@@ -134,10 +134,10 @@ fn click() {
     });
 }
 
-/// The spotlight's keyboard shortcut was pressed (Wayland, where it replaces the double tap).
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn shortcut_pressed() {
-    with_listener(|listener| (listener.notify)(Signal::Show));
+/// Whether the spotlight needs a keyboard shortcut: on Wayland, where the double Ctrl tap
+/// can't be seen.
+pub fn needs_shortcut() -> bool {
+    crate::is_wayland()
 }
 
 /// How often the spotlight moves and resizes while it shows (~60 times a second).
@@ -166,6 +166,16 @@ impl Spotlight {
             Signal::Show => self.show(event_loop),
             Signal::Hide => self.hide(),
         }
+    }
+
+    /// Its keyboard shortcut was pressed. `token` lets the overlay take the keyboard focus on
+    /// Wayland, so the next key press can hide it.
+    pub fn shortcut_pressed(&mut self, event_loop: &ActiveEventLoop, token: Option<String>) {
+        #[cfg(target_os = "linux")]
+        wayland::set_activation_token(token);
+        #[cfg(not(target_os = "linux"))]
+        let _ = token;
+        self.show(event_loop);
     }
 
     /// Shows the spotlight, from the start even if it's already showing.

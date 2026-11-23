@@ -2,9 +2,8 @@
 //!
 //! Wayland doesn't let an app see other apps' keys or where the pointer is, so:
 //!
-//! - **Trigger** (`shortcut.rs`): instead of a double Ctrl tap, a keyboard shortcut registered
-//!   with the desktop through the *GlobalShortcuts* portal. The first time, the desktop asks
-//!   the user to confirm or change the keys. Needs GNOME 48+ or KDE Plasma 5.27+.
+//! - **Trigger**: instead of a double Ctrl tap, a keyboard shortcut (see `crate::hotkeys`),
+//!   which comes with an activation token that lets the overlay take the keyboard focus.
 //! - **Overlay**: one transparent *maximized* window, created each time it shows (Wayland apps
 //!   can't hide a window, only destroy it). The desktop opens it on the monitor with the
 //!   pointer, and tells it where the pointer is once it's over it, which is all we need. Drawn
@@ -17,7 +16,6 @@
 //!   goes to the overlay rather than through it to the window underneath.
 
 mod canvas;
-mod shortcut;
 
 use std::error::Error;
 use std::sync::Mutex;
@@ -48,24 +46,15 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Starts listening for the spotlight shortcut, calling `notify` when it's pressed.
+/// Remembers who to tell when a key or click should hide the spotlight. The shortcut that
+/// shows it is registered by `crate::hotkeys`.
 pub fn start_listener(notify: impl Fn(Signal) + Send + 'static) {
     super::set_listener(notify);
+}
 
-    let spawned = std::thread::Builder::new()
-        .name("spotlight-shortcut".into())
-        .spawn(|| {
-            let pressed = |token: Option<String>| {
-                *lock(&ACTIVATION_TOKEN) = token;
-                super::shortcut_pressed();
-            };
-            if let Err(error) = shortcut::listen(pressed) {
-                eprintln!("spotlight: no keyboard shortcut, so it can't be shown: {error}");
-            }
-        });
-    if let Err(error) = spawned {
-        eprintln!("spotlight: could not start the shortcut thread: {error}");
-    }
+/// Keeps the activation token from the shortcut press that's about to show the spotlight.
+pub fn set_activation_token(token: Option<String>) {
+    *lock(&ACTIVATION_TOKEN) = token;
 }
 
 /// Where the pointer is, in the overlay window it's over. (0, 0) until one has been told.

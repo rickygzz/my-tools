@@ -46,8 +46,8 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(event_loop: &ActiveEventLoop) -> Result<Self, Box<dyn Error>> {
-        let window = create_window(event_loop)?;
+    pub fn new(event_loop: &ActiveEventLoop, token: Option<String>) -> Result<Self, Box<dyn Error>> {
+        let window = create_window(event_loop, token)?;
 
         let ctx = egui::Context::default();
         ctx.set_visuals(egui::Visuals::dark());
@@ -85,11 +85,17 @@ impl Window {
     }
 
     /// Shows the window centered on `screen`, with the whole line selected, ready to type.
-    pub fn show(&mut self, event_loop: &ActiveEventLoop, screen: Option<Screen>) -> Result<(), Box<dyn Error>> {
+    /// `token` is used if a new window has to be made (Wayland, see [`create_window`]).
+    pub fn show(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        screen: Option<Screen>,
+        token: Option<String>,
+    ) -> Result<(), Box<dyn Error>> {
         let window = match &self.window {
             Some(window) => window.clone(),
             None => {
-                let window = create_window(event_loop)?;
+                let window = create_window(event_loop, token)?;
                 pollster::block_on(self.painter.set_window(ViewportId::ROOT, Some(window.clone())))?;
                 self.height = view::BASE_HEIGHT;
                 self.window = Some(window.clone());
@@ -212,8 +218,11 @@ impl Window {
     }
 }
 
-fn create_window(event_loop: &ActiveEventLoop) -> Result<Arc<WinitWindow>, Box<dyn Error>> {
-    #[cfg_attr(not(windows), allow(unused_mut))]
+/// Makes the (hidden) window. On Wayland, the desktop only lets a new window take the
+/// keyboard focus with an activation token from the key press that asked for it; without one,
+/// GNOME shows "Calculator is ready" instead.
+fn create_window(event_loop: &ActiveEventLoop, token: Option<String>) -> Result<Arc<WinitWindow>, Box<dyn Error>> {
+    #[cfg_attr(not(any(windows, target_os = "linux")), allow(unused_mut))]
     let mut attributes = WindowAttributes::default()
         .with_title("Calculator")
         .with_decorations(false)
@@ -226,6 +235,13 @@ fn create_window(event_loop: &ActiveEventLoop) -> Result<Arc<WinitWindow>, Box<d
         use winit::platform::windows::WindowAttributesExtWindows;
         attributes = attributes.with_skip_taskbar(true);
     }
+    #[cfg(target_os = "linux")]
+    if let Some(token) = token {
+        use winit::platform::startup_notify::WindowAttributesExtStartupNotify;
+        attributes = attributes.with_activation_token(winit::window::ActivationToken::from_raw(token));
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = token;
     Ok(Arc::new(event_loop.create_window(attributes)?))
 }
 

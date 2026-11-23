@@ -13,14 +13,8 @@ use winit::window::WindowId;
 
 use super::{Point, Signal, wayland, x11};
 
-/// Whether this is a Wayland session (even if X11 apps can still run in it).
-fn is_wayland() -> bool {
-    std::env::var_os("WAYLAND_DISPLAY").is_some()
-        || std::env::var("XDG_SESSION_TYPE").is_ok_and(|session| session == "wayland")
-}
-
 pub fn start_listener(notify: impl Fn(Signal) + Send + 'static) {
-    if is_wayland() {
+    if crate::is_wayland() {
         wayland::start_listener(notify);
     } else {
         x11::start_listener(notify);
@@ -28,7 +22,7 @@ pub fn start_listener(notify: impl Fn(Signal) + Send + 'static) {
 }
 
 pub fn cursor_position() -> Point {
-    if is_wayland() {
+    if crate::is_wayland() {
         wayland::cursor_position()
     } else {
         x11::cursor_position()
@@ -42,7 +36,7 @@ pub enum Overlay {
 
 impl Overlay {
     pub fn new(event_loop: &ActiveEventLoop) -> Result<Self, Box<dyn Error>> {
-        if is_wayland() {
+        if crate::is_wayland() {
             Ok(Self::Wayland(wayland::Overlay::new(event_loop)?))
         } else {
             Ok(Self::X11(x11::Overlay::new(event_loop)?))

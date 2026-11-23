@@ -9,13 +9,11 @@
 //! | `presenter.rs` | the window's behaviour: history, names, Up/Down, suggestions    |
 //! | `view.rs`      | draws the window with egui, and turns keys into presenter calls |
 //! | `window.rs`    | the winit window egui draws into, through wgpu                  |
-//! | `hotkey.rs`    | Ctrl+Alt+C in every app                                         |
 //!
 //! The window is made the first time it's shown, then hidden and shown again, so the history
 //! and the names given values last until the app exits.
 
 pub mod engine;
-mod hotkey;
 mod presenter;
 mod suggester;
 mod view;
@@ -27,7 +25,6 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
-pub use hotkey::register as register_hotkey;
 use presenter::Presenter;
 use window::{Screen, Window};
 
@@ -43,10 +40,12 @@ impl Default for Calculator {
 }
 
 impl Calculator {
-    /// Shows the window on the screen the mouse is on, ready to type.
-    pub fn show(&mut self, event_loop: &ActiveEventLoop) {
+    /// Shows the window on the screen the mouse is on, ready to type. `token`, from a
+    /// keyboard shortcut on Wayland, lets the window take the keyboard focus.
+    pub fn show(&mut self, event_loop: &ActiveEventLoop, token: Option<String>) {
+        let mut token = token;
         if self.window.is_none() {
-            match Window::new(event_loop) {
+            match Window::new(event_loop, token.take()) {
                 Ok(window) => self.window = Some(window),
                 Err(error) => {
                     eprintln!("calculator: could not open its window: {error}");
@@ -56,7 +55,7 @@ impl Calculator {
         }
         self.presenter.shown();
         if let Some(window) = &mut self.window
-            && let Err(error) = window.show(event_loop, screen_under_cursor(event_loop))
+            && let Err(error) = window.show(event_loop, screen_under_cursor(event_loop), token)
         {
             eprintln!("calculator: could not open its window again: {error}");
         }

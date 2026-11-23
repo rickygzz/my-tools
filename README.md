@@ -31,10 +31,15 @@ When it starts, it puts an icon in the system tray (the menu bar on macOS). Righ
 │   │   ├── geometry.rs    # zones in pixels, which zone a window is in (any OS, unit-tested)
 │   │   ├── config.rs      # reads and writes zones.cfg (any OS, unit-tested)
 │   │   ├── mover.rs       # to zone N, next, previous, other monitor (any OS, unit-tested)
+│   │   ├── drag.rs        # Shift+drag: what shows, where the window goes (any OS, unit-tested)
+│   │   ├── paint.rs       # the overlay as rectangles, seven-segment numbers (any OS, unit-tested)
 │   │   ├── desktop.rs     # the Desktop trait each OS implements, and a fake for tests
 │   │   ├── win32.rs       # Windows: SetWindowPos, minus DWM's invisible borders
+│   │   ├── win32_drag.rs  # Windows: WinEvent hook for drags, layered overlay window
 │   │   ├── macos.rs       # macOS: the Accessibility API
-│   │   └── x11.rs         # Linux X11: EWMH messages to the window manager, RandR
+│   │   ├── macos_drag.rs  # macOS: global mouse monitors, a layer-backed window per screen
+│   │   ├── x11.rs         # Linux X11: EWMH messages to the window manager, RandR
+│   │   └── x11_drag.rs    # Linux X11: XInput2 raw mouse events, ARGB overlay window
 │   └── spotlight/         # mouse spotlight (double Ctrl; a shortcut on Wayland)
 │       ├── mod.rs         # shows/hides/animates it, interprets keys (any OS)
 │       ├── detector.rs    # double-tap timing rules (any OS, unit-tested)
@@ -161,7 +166,11 @@ The history, the names and the lines entered last until the app exits. On **Wayl
 
 ### Window zones
 
-Zones divide each monitor into areas that windows snap into. These keys move the window you're working in (**Win** is **Command** on macOS):
+Zones divide each monitor into areas that windows snap into.
+
+**Dragging a window into a zone:** start dragging a window by its title bar, then press **Shift** (or click the **right mouse button**). The zones of every monitor appear, numbered, with the one under the mouse in blue; they stay while you go on dragging, so you can let go of Shift. Let go of the mouse over a zone, and the window fills it. Pressing Shift again hides the zones (the window then drops where it is); **Esc** cancels the drag. Without Shift, dragging works as usual, and resizing a window by its edge shows no zones.
+
+These keys move the window you're working in (**Win** is **Command** on macOS):
 
 | Keys | Does |
 |---|---|
@@ -185,9 +194,9 @@ A line that can't be used is skipped, and the reason, with its line number, goes
 
 | OS | Status |
 |---|---|
-| Windows | Works. Windows only lets programs run as administrator be moved by programs run as administrator. |
-| macOS | The first time, macOS asks you to allow My Tools under **System Settings → Privacy & Security → Accessibility**; press the keys again after. Full-screen windows can't be moved. |
-| Linux, X11 | Works with any window manager that follows EWMH (GNOME, KDE, XFCE, Cinnamon, most others). The work area (without panels) is one for all monitors in EWMH, so a panel on one monitor can shrink the zones of another. |
+| Windows | Works. Windows only lets programs run as administrator be moved by programs run as administrator. Windows' own snap layouts still show when you drag to the top of the screen; turn off **Settings → System → Multitasking → Snap windows** if they get in the way. |
+| macOS | The first time, macOS asks you to allow My Tools under **System Settings → Privacy & Security → Accessibility**; press the keys again after. Shift+drag only works once that's allowed. Full-screen windows can't be moved. |
+| Linux, X11 | Works with any window manager that follows EWMH (GNOME, KDE, XFCE, Cinnamon, most others). The zones while dragging need a compositor to be see-through, as the spotlight does. The work area (without panels) is one for all monitors in EWMH, so a panel on one monitor can shrink the zones of another. |
 | Linux, Wayland | Doesn't work: Wayland doesn't let apps move other apps' windows. The keys aren't registered there. |
 
 ### Mouse spotlight

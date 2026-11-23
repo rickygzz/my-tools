@@ -35,8 +35,8 @@ x11rb::atom_manager! {
 }
 
 pub struct SystemDesktop {
-    conn: RustConnection,
-    root: Window,
+    pub(super) conn: RustConnection,
+    pub(super) root: Window,
     atoms: Atoms,
 }
 

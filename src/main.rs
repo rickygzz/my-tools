@@ -43,6 +43,8 @@ enum UserEvent {
     /// (Wayland) lets a new window take the keyboard focus.
     Show(Action, Option<String>),
     Spotlight(spotlight::Signal),
+    /// Another app's window is being dragged (window zones).
+    Drag(zones::drag::Signal),
 }
 
 /// The app's state. winit calls the methods below when things happen.
@@ -69,6 +71,13 @@ impl ApplicationHandler<UserEvent> for App {
                 };
                 let _ = proxy.send_event(event);
             };
+            // Drags of other apps' windows, for the zones. On Windows the hook must be set on
+            // this thread, which runs the event loop.
+            let proxy = self.proxy.clone();
+            zones::start_watching(move |signal| {
+                let _ = proxy.send_event(UserEvent::Drag(signal));
+            });
+
             match Tray::start(on_command) {
                 Ok(tray) => self.tray = Some(tray),
                 Err(reason) => {
@@ -94,6 +103,7 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::Show(Action::PreviousZone, _) => self.zones.run(zones::Command::Previous),
             UserEvent::Show(Action::WindowToMouse, _) => self.zones.run(zones::Command::ToMouse),
             UserEvent::Spotlight(signal) => self.spotlight.handle(event_loop, signal),
+            UserEvent::Drag(signal) => self.zones.drag(event_loop, signal),
         }
     }
 
@@ -111,6 +121,8 @@ impl ApplicationHandler<UserEvent> for App {
     fn window_event(&mut self, _event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         if self.calculator.owns(id) {
             self.calculator.window_event(&event);
+        } else if self.zones.owns(id) {
+            self.zones.window_event(&event);
         } else {
             self.spotlight.window_event(id, &event);
         }
@@ -124,6 +136,7 @@ impl ApplicationHandler<UserEvent> for App {
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         self.spotlight = Spotlight::default();
         self.calculator.close();
+        self.zones.close();
     }
 }
 

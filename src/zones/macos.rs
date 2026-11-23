@@ -129,9 +129,7 @@ impl Desktop for SystemDesktop {
     }
 
     fn window_bounds(&self, window: Self::Window) -> Rect {
-        let position: CGPoint = read_value(&window, "AXPosition", AXValueType::CGPoint).unwrap_or_default();
-        let size: CGSize = read_value(&window, "AXSize", AXValueType::CGSize).unwrap_or_default();
-        Rect::new(position.x.round() as i32, position.y.round() as i32, size.width.round() as i32, size.height.round() as i32)
+        bounds_of(&window)
     }
 
     fn move_window(&mut self, window: Self::Window, bounds: Rect) -> Result<(), String> {
@@ -154,9 +152,8 @@ impl Desktop for SystemDesktop {
     }
 
     fn pointer(&self) -> (i32, i32) {
-        // A new event says where the pointer is, from the top left of the main screen.
-        let location = CGEvent::new(None).map_or(CGPoint::default(), |event| CGEvent::location(Some(&event)));
-        (location.x.round() as i32, location.y.round() as i32)
+        let (x, y) = pointer();
+        (x.round() as i32, y.round() as i32)
     }
 
     fn is_maximized(&self, _window: Self::Window) -> bool {
@@ -164,4 +161,38 @@ impl Desktop for SystemDesktop {
     }
 
     fn set_maximized(&mut self, _window: Self::Window, _maximized: bool) {}
+}
+
+/// Where a window is, in points from the top left of the main screen.
+pub(super) fn bounds_of(window: &AXUIElement) -> Rect {
+    let position: CGPoint = read_value(window, "AXPosition", AXValueType::CGPoint).unwrap_or_default();
+    let size: CGSize = read_value(window, "AXSize", AXValueType::CGSize).unwrap_or_default();
+    Rect::new(position.x.round() as i32, position.y.round() as i32, size.width.round() as i32, size.height.round() as i32)
+}
+
+/// The window at a point of the screen, if the app is allowed to see it (without asking).
+pub(super) fn window_at(x: f64, y: f64) -> Option<CFRetained<AXUIElement>> {
+    // SAFETY: plain call.
+    if !unsafe { AXIsProcessTrusted() } {
+        return None;
+    }
+    // SAFETY: plain calls; `found` is a valid place for the result, which we then own.
+    let found = unsafe {
+        let everything = AXUIElement::new_system_wide();
+        // A hung app mustn't hang ours: this runs on the main thread.
+        everything.set_messaging_timeout(0.2);
+        let mut found: *const AXUIElement = std::ptr::null();
+        if everything.copy_element_at_position(x as f32, y as f32, NonNull::from(&mut found)) != AXError::Success {
+            return None;
+        }
+        CFRetained::from_raw(NonNull::new(found.cast_mut())?)
+    };
+    // The element is a button or text in the window, or the window itself.
+    element(&found, "AXWindow").or(Some(found))
+}
+
+/// Where the mouse pointer is, in points from the top left of the main screen.
+pub(super) fn pointer() -> (f64, f64) {
+    let location = CGEvent::new(None).map_or(CGPoint::default(), |event| CGEvent::location(Some(&event)));
+    (location.x, location.y)
 }
